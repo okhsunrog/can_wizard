@@ -265,57 +265,57 @@ static void freeCompletions(linenoiseCompletions *lc) {
  * the input was consumed by the completeLine() function to navigate the
  * possible completions, and the caller should read for the next characters
  * from stdin. */
-static int completeLine(struct linenoiseState *ls) {
+static int completeLine(struct linenoiseState *ls, int keypressed) {
     linenoiseCompletions lc = { 0, NULL };
-    int nread, nwritten;
-    char c = 0;
+    int nwritten;
+    char c = keypressed;
 
     completionCallback(ls->buf,&lc);
     if (lc.len == 0) {
         linenoiseBeep();
+        ls->in_completion = 0;
     } else {
-        size_t stop = 0, i = 0;
+   
+        switch(c) {
+            case 9: /* tab */
+                if (ls->in_completion == 0) {
+                    ls->in_completion = 1;
+                    ls->completion_idx = 0;
+                } else {
+                    ls->completion_idx = (ls->completion_idx+1) % (lc.len+1);
+                    if (ls->completion_idx == lc.len) linenoiseBeep();
+                }
+                c = 0;
+                break;
+            case 27: /* escape */
+                /* Re-show original buffer */
+                if (ls->completion_idx < lc.len) refreshLine(ls);
+                ls->in_completion = 0;
+                c = 0;
+                break;
+            default:
+                /* Update buffer and return */
+                if (ls->completion_idx < lc.len) {
+                    nwritten = snprintf(ls->buf,ls->buflen,"%s",
+                        lc.cvec[ls->completion_idx]);
+                    ls->len = ls->pos = nwritten;
+                    c = 0;
+                }
+                ls->in_completion = 0;
+                break;
+        }
 
-        while(!stop) {
-            /* Show completion or original buffer */
-            if (i < lc.len) {
-                struct linenoiseState saved = *ls;
-
-                ls->len = ls->pos = strlen(lc.cvec[i]);
-                ls->buf = lc.cvec[i];
-                refreshLine(ls);
-                ls->len = saved.len;
-                ls->pos = saved.pos;
-                ls->buf = saved.buf;
-            } else {
-                refreshLine(ls);
-            }
-
-            nread = fread(&c, 1, 1, stdin);
-            if (nread <= 0) {
-                freeCompletions(&lc);
-                return -1;
-            }
-
-            switch(c) {
-                case TAB: /* tab */
-                    i = (i+1) % (lc.len+1);
-                    if (i == lc.len) linenoiseBeep();
-                    break;
-                case ESC: /* escape */
-                    /* Re-show original buffer */
-                    if (i < lc.len) refreshLine(ls);
-                    stop = 1;
-                    break;
-                default:
-                    /* Update buffer and return */
-                    if (i < lc.len) {
-                        nwritten = snprintf(ls->buf,ls->buflen,"%s",lc.cvec[i]);
-                        ls->len = ls->pos = nwritten;
-                    }
-                    stop = 1;
-                    break;
-            }
+        /* Show completion or original buffer */
+        if (ls->in_completion && ls->completion_idx < lc.len) {
+            struct linenoiseState saved = *ls;
+            ls->len = ls->pos = strlen(lc.cvec[ls->completion_idx]);
+            ls->buf = lc.cvec[ls->completion_idx];
+            refreshLine(ls);
+            ls->len = saved.len;
+            ls->pos = saved.pos;
+            ls->buf = saved.buf;
+        } else {
+            refreshLine(ls);
         }
     }
 
@@ -741,6 +741,7 @@ void linenoiseEditDeletePrevWord(struct linenoiseState *l) {
 int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const char *prompt) {
     /* Populate the linenoise state that we pass to functions implementing
      * specific editing functionalities. */
+    l->in_completion = 0;
     l->buf = buf;
     l->buflen = buflen;
     l->prompt = prompt;
@@ -799,8 +800,8 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
     /* Only autocomplete when the callback is set. It returns < 0 when
      * there was an error reading from fd. Otherwise it will return the
      * character that should be handled next. */
-    if (c == 9 && completionCallback != NULL) {
-        c = completeLine(l);
+        if ((l->in_completion || c == 9) && completionCallback != NULL) {
+        c = completeLine(l,c);
         /* Return on errors */
         if (c < 0) return NULL;
         /* Read next character when 0 */
