@@ -497,7 +497,9 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
             snprintf(seq,64,"\r\x1b[0K\x1b[1A");
             abAppend(&ab,seq,strlen(seq));
         }
+    }
 
+    if (flags & REFRESH_ALL) {
         /* Clean the top line. */
         snprintf(seq,64,"\r\x1b[0K");
         abAppend(&ab,seq,strlen(seq));
