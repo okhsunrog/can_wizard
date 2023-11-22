@@ -7,7 +7,7 @@
  *
  * ------------------------------------------------------------------------
  *
- * Copyright (c) 2010-2014, Salvatore Sanfilippo <antirez at gmail dot com>
+ * Copyright (c) 2010-2023, Salvatore Sanfilippo <antirez at gmail dot com>
  * Copyright (c) 2010-2013, Pieter Noordhuis <pcnoordhuis at gmail dot com>
  *
  * All rights reserved.
@@ -44,7 +44,7 @@ extern "C" {
 #endif
 
 #include <stdbool.h>
-#include <stddef.h>
+#include <stddef.h> /* For size_t. */
 
 extern char *linenoiseEditMore;
 
@@ -55,8 +55,6 @@ struct linenoiseState {
     int in_completion;  /* The user pressed TAB and we are now in completion
                          * mode, so input is handled by completeLine(). */
     size_t completion_idx; /* Index of next completion to propose. */
-    int ifd;            /* Terminal stdin file descriptor. */
-    int ofd;            /* Terminal stdout file descriptor. */
     char *buf;          /* Edited line buffer. */
     size_t buflen;      /* Edited line buffer size. */
     const char *prompt; /* Prompt to display. */
@@ -99,20 +97,22 @@ int linenoiseHistoryAdd(const char *line);
 int linenoiseHistorySetMaxLen(int len);
 int linenoiseHistorySave(const char *filename);
 int linenoiseHistoryLoad(const char *filename);
+// ESP-specific
 void linenoiseHistoryFree(void);
+
 
 /* Other utilities. */
 void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
 void linenoisePrintKeyCodes(void);
-// Allow empty input from console (Enter key)
-void linenoiseAllowEmpty(bool);
-int linenoiseSetMaxLineLen(size_t len);
-// Testing console for escape codes support
+void linenoiseMaskModeEnable(void);
+void linenoiseMaskModeDisable(void);
+// ESP-specific
 int linenoiseProbe(void);
-// Dump mode for consoles withoud escape codes support
 void linenoiseSetDumbMode(int set);
 bool linenoiseIsDumbMode(void);
+void linenoiseAllowEmpty(bool);
+int linenoiseSetMaxLineLen(size_t len);
 
 #ifdef __cplusplus
 }
