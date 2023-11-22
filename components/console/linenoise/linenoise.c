@@ -10,7 +10,8 @@
  *
  * ------------------------------------------------------------------------
  *
- * Copyright (c) 2010-2016, Salvatore Sanfilippo <antirez at gmail dot com>
+ * Copyright (c) 2023-2023, Danila Gornushko <d3g3v3 at gmail dot com>
+ * Copyright (c) 2010-2023, Salvatore Sanfilippo <antirez at gmail dot com>
  * Copyright (c) 2010-2013, Pieter Noordhuis <pcnoordhuis at gmail dot com>
  *
  * All rights reserved.
@@ -128,21 +129,6 @@ static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
 
-/* The linenoiseState structure represents the state during line editing.
- * We pass this state to functions implementing specific editing
- * functionalities. */
-struct linenoiseState {
-    char *buf;          /* Edited line buffer. */
-    size_t buflen;      /* Edited line buffer size. */
-    const char *prompt; /* Prompt to display. */
-    size_t plen;        /* Prompt length. */
-    size_t pos;         /* Current cursor position. */
-    size_t oldpos;      /* Previous refresh cursor position. */
-    size_t len;         /* Current edited line length. */
-    size_t cols;        /* Number of columns in terminal. */
-    size_t maxrows;     /* Maximum num of rows used so far (multiline mode) */
-    int history_index;  /* The history index we are currently editing. */
-};
 
 enum KEY_ACTION{
 	KEY_NULL = 0,	    /* NULL */
@@ -167,26 +153,10 @@ enum KEY_ACTION{
 };
 
 int linenoiseHistoryAdd(const char *line);
+#define REFRESH_CLEAN (1<<0)    // Clean the old prompt from the screen
+#define REFRESH_WRITE (1<<1)    // Rewrite the prompt on the screen.
+#define REFRESH_ALL (REFRESH_CLEAN|REFRESH_WRITE) // Do both.
 static void refreshLine(struct linenoiseState *l);
-
-/* Debugging macro. */
-#if 0
-FILE *lndebug_fp = NULL;
-#define lndebug(...) \
-    do { \
-        if (lndebug_fp == NULL) { \
-            lndebug_fp = fopen("/tmp/lndebug.txt","a"); \
-            fprintf(lndebug_fp, \
-            "[%d %d %d] p: %d, rows: %d, rpos: %d, max: %d, oldmax: %d\n", \
-            (int)l->len,(int)l->pos,(int)l->oldpos,plen,rows,rpos, \
-            (int)l->maxrows,old_rows); \
-        } \
-        fprintf(lndebug_fp, ", " __VA_ARGS__); \
-        fflush(lndebug_fp); \
-    } while (0)
-#else
-#define lndebug(fmt, ...)
-#endif
 
 /* ======================= Low level terminal handling ====================== */
 
@@ -440,8 +410,11 @@ void refreshShowHints(struct abuf *ab, struct linenoiseState *l, int plen) {
 /* Single line low level line refresh.
  *
  * Rewrite the currently edited line accordingly to the buffer content,
- * cursor position, and number of columns of the terminal. */
-static void refreshSingleLine(struct linenoiseState *l) {
+ * cursor position, and number of columns of the terminal.
+ *
+ * Flags is REFRESH_* macros. The function can just remove the old
+ * prompt, just write it, or both. */
+static void refreshSingleLine(struct linenoiseState *l, int flags) {
     char seq[64];
     size_t plen = l->plen;
     char *buf = l->buf;
@@ -460,23 +433,30 @@ static void refreshSingleLine(struct linenoiseState *l) {
 
     abInit(&ab);
     /* Cursor to left edge */
-    snprintf(seq,64,"\r");
+    snprintf(seq,sizeof(seq),"\r");
     abAppend(&ab,seq,strlen(seq));
-    /* Write the prompt and the current buffer content */
-    abAppend(&ab,l->prompt,strlen(l->prompt));
-    if (maskmode == 1) {
-        while (len--) abAppend(&ab,"*",1);
-    } else {
-        abAppend(&ab,buf,len);
+
+    if (flags & REFRESH_WRITE) {
+        /* Write the prompt and the current buffer content */
+        abAppend(&ab,l->prompt,strlen(l->prompt));
+        if (maskmode == 1) {
+            while (len--) abAppend(&ab,"*",1);
+        } else {
+            abAppend(&ab,buf,len);
+        }
+        /* Show hits if any. */
+        refreshShowHints(&ab,l,plen);
     }
-    /* Show hits if any. */
-    refreshShowHints(&ab,l,plen);
     /* Erase to right */
-    snprintf(seq,64,"\x1b[0K");
+    snprintf(seq,sizeof(seq),"\x1b[0K");
     abAppend(&ab,seq,strlen(seq));
-    /* Move cursor to original position. */
-    snprintf(seq,64,"\r\x1b[%dC", (int)(pos+plen));
-    abAppend(&ab,seq,strlen(seq));
+
+    if (flags & REFRESH_WRITE) {
+        /* Move cursor to original position. */
+        snprintf(seq,sizeof(seq),"\r\x1b[%dC", (int)(pos+plen));
+        abAppend(&ab,seq,strlen(seq));
+    }
+
     if (fwrite(ab.b, ab.len, 1, stdout) == -1) {} /* Can't recover from write error. */
     abFree(&ab);
 }
@@ -484,8 +464,11 @@ static void refreshSingleLine(struct linenoiseState *l) {
 /* Multi line low level line refresh.
  *
  * Rewrite the currently edited line accordingly to the buffer content,
- * cursor position, and number of columns of the terminal. */
-static void refreshMultiLine(struct linenoiseState *l) {
+ * cursor position, and number of columns of the terminal.
+ *
+ * Flags is REFRESH_* macros. The function can just remove the old
+ * prompt, just write it, or both. */
+static void refreshMultiLine(struct linenoiseState *l, int flags) {
     char seq[64];
     int plen = l->plen;
     int rows = (plen+l->len+l->cols-1)/l->cols; /* rows used by current buf. */
@@ -502,72 +485,71 @@ static void refreshMultiLine(struct linenoiseState *l) {
     /* First step: clear all the lines used before. To do so start by
      * going to the last row. */
     abInit(&ab);
-    if (old_rows-rpos > 0) {
-        lndebug("go down %d", old_rows-rpos);
-        snprintf(seq,64,"\x1b[%dB", old_rows-rpos);
+
+    if (flags & REFRESH_CLEAN) {
+        if (old_rows-rpos > 0) {
+            snprintf(seq,64,"\x1b[%dB", old_rows-rpos);
+            abAppend(&ab,seq,strlen(seq));
+        }
+
+        /* Now for every row clear it, go up. */
+        for (j = 0; j < old_rows-1; j++) {
+            snprintf(seq,64,"\r\x1b[0K\x1b[1A");
+            abAppend(&ab,seq,strlen(seq));
+        }
+
+        /* Clean the top line. */
+        snprintf(seq,64,"\r\x1b[0K");
         abAppend(&ab,seq,strlen(seq));
     }
 
-    /* Now for every row clear it, go up. */
-    for (j = 0; j < old_rows-1; j++) {
-        lndebug("clear+up");
-        snprintf(seq,64,"\r\x1b[0K\x1b[1A");
+    if (flags & REFRESH_WRITE) {
+        /* Write the prompt and the current buffer content */
+        abAppend(&ab,l->prompt,strlen(l->prompt));
+        if (maskmode == 1) {
+            unsigned int i;
+            for (i = 0; i < l->len; i++) abAppend(&ab,"*",1);
+        } else {
+            abAppend(&ab,l->buf,l->len);
+        }
+
+        /* Show hits if any. */
+        refreshShowHints(&ab,l,plen);
+
+        /* If we are at the very end of the screen with our prompt, we need to
+         * emit a newline and move the prompt to the first column. */
+        if (l->pos &&
+            l->pos == l->len &&
+            (l->pos+plen) % l->cols == 0)
+        {
+            abAppend(&ab,"\n",1);
+            snprintf(seq,64,"\r");
+            abAppend(&ab,seq,strlen(seq));
+            rows++;
+            if (rows > (int)l->maxrows) l->maxrows = rows;
+        }
+
+        /* Move cursor to right position. */
+        rpos2 = (plen+l->pos+l->cols)/l->cols; /* Current cursor relative row */
+
+        /* Go up till we reach the expected positon. */
+        if (rows-rpos2 > 0) {
+            snprintf(seq,64,"\x1b[%dA", rows-rpos2);
+            abAppend(&ab,seq,strlen(seq));
+        }
+
+        /* Set column. */
+        col = (plen+(int)l->pos) % (int)l->cols;
+        if (col)
+            snprintf(seq,64,"\r\x1b[%dC", col);
+        else
+            snprintf(seq,64,"\r");
         abAppend(&ab,seq,strlen(seq));
     }
 
-    /* Clean the top line. */
-    lndebug("clear");
-    snprintf(seq,64,"\r\x1b[0K");
-    abAppend(&ab,seq,strlen(seq));
-
-    /* Write the prompt and the current buffer content */
-    abAppend(&ab,l->prompt,strlen(l->prompt));
-    if (maskmode == 1) {
-        for (uint i = 0; i < l->len; i++) abAppend(&ab,"*",1);
-    } else {
-        abAppend(&ab,l->buf,l->len);
-    }
-    /* Show hits if any. */
-    refreshShowHints(&ab,l,plen);
-
-    /* If we are at the very end of the screen with our prompt, we need to
-     * emit a newline and move the prompt to the first column. */
-    if (l->pos &&
-        l->pos == l->len &&
-        (l->pos+plen) % l->cols == 0)
-    {
-        lndebug("<newline>");
-        abAppend(&ab,"\n",1);
-        snprintf(seq,64,"\r");
-        abAppend(&ab,seq,strlen(seq));
-        rows++;
-        if (rows > (int)l->maxrows) l->maxrows = rows;
-    }
-
-    /* Move cursor to right position. */
-    rpos2 = (plen+l->pos+l->cols)/l->cols; /* current cursor relative row. */
-    lndebug("rpos2 %d", rpos2);
-
-    /* Go up till we reach the expected positon. */
-    if (rows-rpos2 > 0) {
-        lndebug("go-up %d", rows-rpos2);
-        snprintf(seq,64,"\x1b[%dA", rows-rpos2);
-        abAppend(&ab,seq,strlen(seq));
-    }
-
-    /* Set column. */
-    col = (plen+(int)l->pos) % (int)l->cols;
-    lndebug("set col %d", 1+col);
-    if (col)
-        snprintf(seq,64,"\r\x1b[%dC", col);
-    else
-        snprintf(seq,64,"\r");
-    abAppend(&ab,seq,strlen(seq));
-
-    lndebug("\n");
     l->oldpos = l->pos;
 
-    if (fwrite(ab.b,ab.len,1,stdout) == -1) {} /* Can't recover from write error. */
+    if (fwrite(ab.b, ab.len, 1, stdout) == -1) {} /* Can't recover from write error. */
     abFree(&ab);
 }
 
@@ -575,9 +557,25 @@ static void refreshMultiLine(struct linenoiseState *l) {
  * refreshMultiLine() according to the selected mode. */
 static void refreshLine(struct linenoiseState *l) {
     if (mlmode)
-        refreshMultiLine(l);
+        refreshMultiLine(l,REFRESH_ALL);
     else
-        refreshSingleLine(l);
+        refreshSingleLine(l,REFRESH_ALL);
+}
+
+/* Hide the current line, when using the multiplexing API. */
+void linenoiseHide(struct linenoiseState *l) {
+    if (mlmode)
+        refreshMultiLine(l,REFRESH_CLEAN);
+    else
+        refreshSingleLine(l,REFRESH_CLEAN);
+}
+
+/* Show the current line, when using the multiplexing API. */
+void linenoiseShow(struct linenoiseState *l) {
+    if (mlmode)
+        refreshMultiLine(l,REFRESH_WRITE);
+    else
+        refreshSingleLine(l,REFRESH_WRITE);
 }
 
 /* Insert the character 'c' at cursor current position.
@@ -751,60 +749,12 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
      * initially is just an empty string. */
     linenoiseHistoryAdd("");
 
+    int pos1 = getCursorPosition();
     if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
-    return 0;
-}
-    //
-    // int pos1 = getCursorPosition();
-    // if (fwrite(prompt,l.plen,1,stdout) == -1) return -1;
-    // int pos2 = getCursorPosition();
-    // if (pos1 >= 0 && pos2 >= 0) {
-    //     l.plen = pos2 - pos1;
-    // }
-
-
-    /* This function is part of the multiplexed API of linenoise, see the top
- * comment on linenoiseEditStart() for more information. Call this function
- * each time there is some data to read from the standard input file
- * descriptor. In the case of blocking operations, this function can just be
- * called in a loop, and block.
- *
- * The function returns NULL to signal that line editing is still in progress,
- * that is, the user didn't yet pressed enter / CTRL-D. Otherwise the function
- * returns the pointer to the buffer and populates '*len' with the current
- * buffer length. If '*len' is set to -1, some special condition occurred, and
- * the caller may want to check 'errno':
- *
- * EAGAIN if the user pressed Ctrl-C
- * ENOENT if the user pressed Ctrl-D
- */
-int linenoiseEditStart(struct linenoiseState *l, int stdin_fd, int stdout_fd, char *buf, size_t buflen, const char *prompt) {
-    /* Populate the linenoise state that we pass to functions implementing
-     * specific editing functionalities. */
-    l->ifd = stdin_fd != -1 ? stdin_fd : STDIN_FILENO;
-    l->ofd = stdout_fd != -1 ? stdout_fd : STDOUT_FILENO;
-    l->buf = buf;
-    l->buflen = buflen;
-    l->prompt = prompt;
-    l->plen = strlen(prompt);
-    l->oldpos = l->pos = 0;
-    l->len = 0;
-    l->cols = getColumns(stdin_fd, stdout_fd);
-    l->maxrows = 0;
-    l->history_index = 0;
-
-    /* Buffer starts empty. */
-    l->buf[0] = '\0';
-    l->buflen--; /* Make sure there is always space for the nulterm */
-
-    /* Enter raw mode. */
-    if (enableRawMode(l->ifd) == -1) return -1;
-
-    /* The latest history entry is always our current buffer, that
-     * initially is just an empty string. */
-    linenoiseHistoryAdd("");
-
-    if (write(l->ofd,prompt,l->plen) == -1) return -1;
+    int pos2 = getCursorPosition();
+    if (pos1 >= 0 && pos2 >= 0) {
+        l->plen = pos2 - pos1;
+    }
     return 0;
 }
 
