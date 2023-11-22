@@ -593,7 +593,8 @@ int linenoiseEditInsert(struct linenoiseState *l, char c) {
             if ((!mlmode && l->plen+l->len < l->cols && !hintsCallback)) {
                 /* Avoid a full update of the line in the
                  * trivial case. */
-                if (fwrite(&c,1,1,stdout) == -1) return -1;
+                char d = (maskmode==1) ? '*' : c;
+                if (fwrite(&d,1,1,stdout) == -1) return -1;
             } else {
                 refreshLine(l);
             }
