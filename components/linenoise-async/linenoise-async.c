@@ -137,21 +137,6 @@ static int history_len = 0;
 static char **history = NULL;
 static bool allow_empty = true;
 
-/* The linenoiseState structure represents the state during line editing.
- * We pass this state to functions implementing specific editing
- * functionalities. */
-struct linenoiseState {
-    char *buf;          /* Edited line buffer. */
-    size_t buflen;      /* Edited line buffer size. */
-    const char *prompt; /* Prompt to display. */
-    size_t plen;        /* Prompt length. */
-    size_t pos;         /* Current cursor position. */
-    size_t oldpos;      /* Previous refresh cursor position. */
-    size_t len;         /* Current edited line length. */
-    size_t cols;        /* Number of columns in terminal. */
-    size_t maxrows;     /* Maximum num of rows used so far (multiline mode) */
-    int history_index;  /* The history index we are currently editing. */
-};
 
 enum KEY_ACTION{
 	KEY_NULL = 0,	    /* NULL */
@@ -188,7 +173,7 @@ FILE *lndebug_fp = NULL;
             fprintf(lndebug_fp, \
             "[%d %d %d] p: %d, rows: %d, rpos: %d, max: %d, oldmax: %d\n", \
             (int)l->len,(int)l->pos,(int)l->oldpos,plen,rows,rpos, \
-            (int)l->maxrows,old_rows); \
+            (int)l->oldrows,old_rows); \
         } \
         fprintf(lndebug_fp, ", " __VA_ARGS__); \
         fflush(lndebug_fp); \
@@ -568,13 +553,13 @@ static void refreshMultiLine(struct linenoiseState *l) {
     int rpos = (plen+l->oldpos+l->cols)/l->cols; /* cursor relative row. */
     int rpos2; /* rpos after refresh. */
     int col; /* colum position, zero-based. */
-    int old_rows = l->maxrows;
+    int old_rows = l->oldrows;
     int j;
     int fd = fileno(stdout);
     struct abuf ab;
 
-    /* Update maxrows if needed. */
-    if (rows > (int)l->maxrows) l->maxrows = rows;
+    /* Update oldrows if needed. */
+    if (rows > (int)l->oldrows) l->oldrows = rows;
 
     /* First step: clear all the lines used before. To do so start by
      * going to the last row. */
@@ -615,7 +600,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
         snprintf(seq,64,"\r");
         abAppend(&ab,seq,strlen(seq));
         rows++;
-        if (rows > (int)l->maxrows) l->maxrows = rows;
+        if (rows > (int)l->oldrows) l->oldrows = rows;
     }
 
     /* Move cursor to right position. */
@@ -829,7 +814,7 @@ static int linenoiseEdit(char *buf, size_t buflen, const char *prompt)
     l.oldpos = l.pos = 0;
     l.len = 0;
     l.cols = getColumns();
-    l.maxrows = 0;
+    l.oldrows = 0;
     l.history_index = 0;
 
     /* Buffer starts empty. */
