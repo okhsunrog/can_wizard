@@ -46,6 +46,8 @@ extern "C" {
 
 #include <stddef.h> /* For size_t. */
 
+extern char *linenoiseEditMore;
+
 /* The linenoiseState structure represents the state during line editing.
  * We pass this state to functions implementing specific editing
  * functionalities. */
@@ -71,7 +73,7 @@ typedef struct linenoiseCompletions {
 
 /* Non blocking API. */
 int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const char *prompt);
-char *linenoiseEditFeed(struct linenoiseState *l, int *len);
+char *linenoiseEditFeed(struct linenoiseState *l);
 void linenoiseEditStop(struct linenoiseState *l);
 void linenoiseHide(struct linenoiseState *l);
 void linenoiseShow(struct linenoiseState *l);
