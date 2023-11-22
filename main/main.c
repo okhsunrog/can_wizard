@@ -52,7 +52,7 @@ static void initialize_console(void) {
     linenoiseSetMultiLine(1);
 
     /* Tell linenoise where to get command completions and hints */
-    linenoiseSetCompletionCallback(&esp_console_get_completion);
+    // linenoiseSetCompletionCallback(&esp_console_get_completion);
     linenoiseSetHintsCallback((linenoiseHintsCallback*) &esp_console_get_hint);
 
     /* Set command history size */
