@@ -509,12 +509,11 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
     int rpos = (plen+l->oldpos+l->cols)/l->cols; /* cursor relative row. */
     int rpos2; /* rpos after refresh. */
     int col; /* colum position, zero-based. */
-    int old_rows = l->maxrows;
+    int old_rows = l->oldrows;
     int j;
     struct abuf ab;
 
-    /* Update maxrows if needed. */
-    if (rows > (int)l->maxrows) l->maxrows = rows;
+    l->oldrows = rows;
 
     /* First step: clear all the lines used before. To do so start by
      * going to the last row. */
@@ -562,7 +561,7 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
             snprintf(seq,64,"\r");
             abAppend(&ab,seq,strlen(seq));
             rows++;
-            if (rows > (int)l->maxrows) l->maxrows = rows;
+            if (rows > (int)l->oldrows) l->oldrows = rows;
         }
 
         /* Move cursor to right position. */
@@ -781,7 +780,7 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
     l->oldpos = l->pos = 0;
     l->len = 0;
     l->cols = getColumns();
-    l->maxrows = 0;
+    l->oldrows = 0;
     l->history_index = 0;
 
     /* Buffer starts empty. */
