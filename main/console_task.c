@@ -2,8 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_system.h"
-//#include "argtable3/argtable3.h"
-#include "linenoise/linenoise.h"
+#include "linenoise-async.h"
 #include "esp_log.h"
 #include "esp_console.h"
 #include "fs.h"
