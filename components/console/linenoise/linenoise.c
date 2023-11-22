@@ -122,7 +122,7 @@ static linenoiseCompletionCallback *completionCallback = NULL;
 static linenoiseHintsCallback *hintsCallback = NULL;
 static linenoiseFreeHintsCallback *freeHintsCallback = NULL;
 
-static int maskmode = 0; /* for mask input mode */
+static int maskmode = 0; /* Show "***" instead of input. For passwords. */
 static int mlmode = 0;  /* Multi line mode. Default is single line. */
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
@@ -190,11 +190,16 @@ FILE *lndebug_fp = NULL;
 
 /* ======================= Low level terminal handling ====================== */
 
-void linenoiseMaskModeEnable() {
+/* Enable "mask mode". When it is enabled, instead of the input that
+ * the user is typing, the terminal will just display a corresponding
+ * number of asterisks, like "****". This is useful for passwords and other
+ * secrets that should not be displayed. */
+void linenoiseMaskModeEnable(void) {
     maskmode = 1;
 }
 
-void linenoiseMaskModeDisable() {
+/* Disable mask mode. */
+void linenoiseMaskModeDisable(void) {
     maskmode = 0;
 }
 
@@ -460,11 +465,10 @@ static void refreshSingleLine(struct linenoiseState *l) {
     /* Write the prompt and the current buffer content */
     abAppend(&ab,l->prompt,strlen(l->prompt));
     if (maskmode == 1) {
-        while (len--) {
-            abAppend(&ab,"*",1);
-        }
-    } else
+        while (len--) abAppend(&ab,"*",1);
+    } else {
         abAppend(&ab,buf,len);
+    }
     /* Show hits if any. */
     refreshShowHints(&ab,l,plen);
     /* Erase to right */
@@ -519,12 +523,10 @@ static void refreshMultiLine(struct linenoiseState *l) {
     /* Write the prompt and the current buffer content */
     abAppend(&ab,l->prompt,strlen(l->prompt));
     if (maskmode == 1) {
-        for (uint i = 0; i < l->len; i++) {
-            abAppend(&ab,"*",1);
-        }
-    } else
+        for (uint i = 0; i < l->len; i++) abAppend(&ab,"*",1);
+    } else {
         abAppend(&ab,l->buf,l->len);
-
+    }
     /* Show hits if any. */
     refreshShowHints(&ab,l,plen);
 
