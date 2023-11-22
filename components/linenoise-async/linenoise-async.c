@@ -381,16 +381,15 @@ failed:
 
 /* Clear the screen. Used to handle ctrl+l */
 void linenoiseClearScreen(void) {
-    if (write(STDOUT_FILENO,"\x1b[H\x1b[2J",7) <= 0) {
-        /* nothing to do, just to avoid warning. */
-    }
+    fprintf(stdout, "\x1b[H\x1b[2J");
+    flushWrite();
 }
 
 /* Beep, used for completion when there is nothing to complete or when all
  * the choices were already shown. */
 static void linenoiseBeep(void) {
-    fprintf(stderr, "\x7");
-    fflush(stderr);
+    fprintf(stdout, "\x7");
+    flushWrite();
 }
 
 /* ============================== Completion ================================ */
