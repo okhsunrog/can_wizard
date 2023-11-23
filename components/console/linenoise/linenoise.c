@@ -991,7 +991,7 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
     nread = fread(&c, 1, 1, stdin);
     if (nread <= 0) return NULL;
     // FIXME: line printed twice after pasting something
-    if ( (getMillis() - t1) < LINENOISE_PASTE_KEY_DELAY ) {
+    if ( (getMillis() - t1) < LINENOISE_PASTE_KEY_DELAY && c != ENTER) {
         /* Pasting data, insert characters without formatting.
          * This can only be performed when the cursor is at the end of the
          * line. */
