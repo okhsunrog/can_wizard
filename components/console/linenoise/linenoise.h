@@ -45,6 +45,7 @@ extern "C" {
 #endif
 
 #include <stddef.h> /* For size_t. */
+#include <stdbool.h>
 
 extern char *linenoiseEditMore;
 
@@ -105,7 +106,8 @@ void linenoiseHistoryFree();
 /* Other utilities. */
 void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
-void linenoisePrintKeyCodes(void);
+void linenoiseSetDumbMode(int set);
+bool linenoiseIsDumbMode(void);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
 

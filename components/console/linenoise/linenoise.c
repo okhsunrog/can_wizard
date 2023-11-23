@@ -107,17 +107,21 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdio_ext.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <sys/stat.h>
+#include <assert.h>
+#include <sys/fcntl.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "linenoise.h"
 
 #define LINENOISE_DEFAULT_HISTORY_MAX_LEN 100
 #define LINENOISE_MAX_LINE 4096
+#define LINENOISE_COMMAND_MAX_LEN 32
 
 static linenoiseCompletionCallback *completionCallback = NULL;
 static linenoiseHintsCallback *hintsCallback = NULL;
@@ -127,6 +131,7 @@ static void refreshLineWithFlags(struct linenoiseState *l, int flags);
 
 static int maskmode = 0; /* Show "***" instead of input. For passwords. */
 static int mlmode = 0;  /* Multi line mode. Default is single line. */
+static int dumbmode = 0; /* Dumb mode where line editing is disabled. Off by default */
 static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
@@ -180,6 +185,23 @@ void linenoiseSetMultiLine(int ml) {
     mlmode = ml;
 }
 
+/* Set if terminal does not recognize escape sequences */
+void linenoiseSetDumbMode(int set) {
+    dumbmode = set;
+}
+
+/* Returns whether the current mode is dumbmode or not. */
+bool linenoiseIsDumbMode(void) {
+    return dumbmode;
+}
+
+static void flushWrite(void) {
+    if (__fbufsize(stdout) > 0) {
+        fflush(stdout);
+    }
+    fsync(fileno(stdout));
+}
+
 /* Use the ESC [6n escape sequence to query the horizontal cursor position
  * and return it. On error -1 is returned, on success the position of the
  * cursor. */
@@ -190,6 +212,7 @@ static int getCursorPosition() {
 
     /* Report cursor location */
     fprintf(stdout, "\x1b[6n");
+    flushWrite();
     /* Read the response: ESC [ rows ; cols R */
     while (i < sizeof(buf)-1) {
         if (fread(buf+i, 1, 1, stdin) != 1) break;
@@ -214,6 +237,7 @@ static int getColumns() {
 
     /* Go to right margin and get position. */
     if (fwrite("\x1b[999C", 1, 6, stdout) != 6) goto failed;
+    flushWrite();
     cols = getCursorPosition();
     if (cols == -1) goto failed;
 
@@ -224,6 +248,7 @@ static int getColumns() {
         if (fwrite(seq, 1, strlen(seq), stdout) == -1) {
             /* Can't recover... */
         }
+        flushWrite();
     }
     return cols;
 
@@ -234,12 +259,14 @@ failed:
 /* Clear the screen. Used to handle ctrl+l */
 void linenoiseClearScreen(void) {
     fprintf(stdout,"\x1b[H\x1b[2J");
+    flushWrite();
 }
 
 /* Beep, used for completion when there is nothing to complete or when all
  * the choices were already shown. */
 static void linenoiseBeep(void) {
     fprintf(stdout, "\x7");
+    flushWrite();
 }
 
 /* ============================== Completion ================================ */
@@ -492,6 +519,7 @@ static void refreshSingleLine(struct linenoiseState *l, int flags) {
     }
 
     if (fwrite(ab.b, ab.len, 1, stdout) == -1) {} /* Can't recover from write error. */
+    flushWrite();
     abFree(&ab);
 }
 
@@ -585,6 +613,7 @@ static void refreshMultiLine(struct linenoiseState *l, int flags) {
     l->oldpos = l->pos;
 
     if (fwrite(ab.b, ab.len, 1, stdout) == -1) {} /* Can't recover from write error. */
+    flushWrite();
     abFree(&ab);
 }
 
@@ -634,6 +663,7 @@ int linenoiseEditInsert(struct linenoiseState *l, char c) {
                  * trivial case. */
                 char d = (maskmode==1) ? '*' : c;
                 if (fwrite(&d,1,1,stdout) == -1) return -1;
+                flushWrite();
             } else {
                 refreshLine(l);
             }
@@ -745,6 +775,38 @@ void linenoiseEditDeletePrevWord(struct linenoiseState *l) {
     refreshLine(l);
 }
 
+// TODO: try to make a non-blocking dumb mode
+static char *linenoiseDumb(struct linenoiseState *l) {
+    /* dumb terminal, fall back to fgets */
+    fputs(l->prompt, stdout);
+    flushWrite();
+    l->len = 0; //needed?
+    while (l->len < l->buflen) {
+        int c = fgetc(stdin);
+        if (c == '\n') {
+            break;
+        } else if (c >= 0x1c && c <= 0x1f){
+            continue; /* consume arrow keys */
+        } else if (c == BACKSPACE || c == 0x8) {
+            if (l->len > 0) {
+                l->buf[l->len - 1] = 0;
+                l->len --;
+            }
+            fputs("\x08 ", stdout); /* Windows CMD: erase symbol under cursor */
+            flushWrite();
+        } else {
+            l->buf[l->len] = c;
+            l->len++;
+        }
+        fputc(c, stdout); /* echo */
+        flushWrite();
+    }
+    fputc('\n', stdout);
+    flushWrite();
+    if (l->len == 0) return linenoiseEditMore;
+    return strdup(l->buf);
+}
+
 /* This function is part of the multiplexed API of Linenoise, that is used
  * in order to implement the blocking variant of the API but can also be
  * called by the user directly in an event driven program. It will:
@@ -789,13 +851,18 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
 
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
-    linenoiseHistoryAdd("");
-
-    int pos1 = getCursorPosition();
-    if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
-    int pos2 = getCursorPosition();
-    if (pos1 >= 0 && pos2 >= 0) {
-        l->plen = pos2 - pos1;
+    if (!dumbmode) {
+        linenoiseHistoryAdd("");
+        int pos1 = getCursorPosition();
+        if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
+        flushWrite();
+        int pos2 = getCursorPosition();
+        if (pos1 >= 0 && pos2 >= 0) {
+            l->plen = pos2 - pos1;
+        }
+    } else {
+        if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
+        flushWrite();
     }
     return 0;
 }
@@ -821,6 +888,7 @@ char *linenoiseEditMore = "If you see this, you are misusing the API: when linen
  * Some other errno: I/O error.
  */
 char *linenoiseEditFeed(struct linenoiseState *l) {
+    if (dumbmode) return linenoiseDumb(l);
     char c;
     int nread;
     char seq[3];
@@ -974,6 +1042,7 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
         linenoiseEditDeletePrevWord(l);
         break;
     }
+    flushWrite();
     return linenoiseEditMore;
 }
 
@@ -983,8 +1052,11 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
  * returns something different than NULL. At this point the user input
  * is in the buffer, and we can restore the terminal in normal mode. */
 void linenoiseEditStop(struct linenoiseState *l) {
-    printf("\n");
+    fputc('\n', stdout);
+    flushWrite();
 }
+
+
 
 /* This just implements a blocking loop for the multiplexed API.
  * In many applications that are not event-drivern, we can just call
@@ -998,18 +1070,55 @@ static char *linenoiseBlockingEdit(char *buf, size_t buflen, const char *prompt)
         errno = EINVAL;
         return NULL;
     }
-    
-    linenoiseEditStart(&l,buf,buflen,prompt);
     char *res;
+    linenoiseEditStart(&l,buf,buflen,prompt);
     while((res = linenoiseEditFeed(&l)) == linenoiseEditMore);
     linenoiseEditStop(&l);
     return res;
 }
 
+int linenoiseProbe() {
+    /* Switch to non-blocking mode */
+    int stdin_fileno = fileno(stdin);
+    int flags = fcntl(stdin_fileno, F_GETFL);
+    flags |= O_NONBLOCK;
+    int res = fcntl(stdin_fileno, F_SETFL, flags);
+    if (res != 0) {
+        return -1;
+    }
+    /* Device status request */
+    fprintf(stdout, "\x1b[5n");
+    flushWrite();
+
+    /* Try to read response */
+    int timeout_ms = 200;
+    const int retry_ms = 10;
+    size_t read_bytes = 0;
+    while (timeout_ms > 0 && read_bytes < 4) { // response is ESC[0n or ESC[3n
+        usleep(retry_ms * 1000);
+        timeout_ms -= retry_ms;
+        char c;
+        int cb = read(stdin_fileno, &c, 1);
+        if (cb < 0) {
+            continue;
+        }
+        read_bytes += cb;
+    }
+    /* Restore old mode */
+    flags &= ~O_NONBLOCK;
+    res = fcntl(stdin_fileno, F_SETFL, flags);
+    if (res != 0) {
+        return -1;
+    }
+    if (read_bytes < 4) {
+        return -2;
+    }
+    return 0;
+}
+
 /* The high level function that is the main API of the linenoise library. */
 char *linenoise(const char *prompt) {
     char buf[LINENOISE_MAX_LINE];
-
     char *retval = linenoiseBlockingEdit(buf,LINENOISE_MAX_LINE,prompt);
     return retval;
 }
