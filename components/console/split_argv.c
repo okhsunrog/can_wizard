@@ -1,16 +1,8 @@
-// Copyright 2016-2017 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * SPDX-FileCopyrightText: 2016-2021 Espressif Systems (Shanghai) CO LTD
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <stdio.h>
 #include <ctype.h>
@@ -31,13 +23,20 @@ typedef enum {
     SS_QUOTED_ARG_ESCAPED = SS_QUOTED_ARG | SS_FLAG_ESCAPE,
 } split_state_t;
 
+/* helper macro, called when done with an argument */
+#define END_ARG() do { \
+    char_out = 0; \
+    argv[argc++] = next_arg_start; \
+    state = SS_SPACE; \
+} while(0)
+
 size_t esp_console_split_argv(char *line, char **argv, size_t argv_size)
 {
     const int QUOTE = '"';
     const int ESCAPE = '\\';
     const int SPACE = ' ';
     split_state_t state = SS_SPACE;
-    int argc = 0;
+    size_t argc = 0;
     char *next_arg_start = line;
     char *out_ptr = line;
     for (char *in_ptr = line; argc < argv_size - 1; ++in_ptr) {
@@ -46,13 +45,6 @@ size_t esp_console_split_argv(char *line, char **argv, size_t argv_size)
             break;
         }
         int char_out = -1;
-
-        /* helper function, called when done with an argument */
-        void end_arg() {
-            char_out = 0;
-            argv[argc++] = next_arg_start;
-            state = SS_SPACE;
-        }
 
         switch (state) {
         case SS_SPACE:
@@ -73,7 +65,7 @@ size_t esp_console_split_argv(char *line, char **argv, size_t argv_size)
 
         case SS_QUOTED_ARG:
             if (char_in == QUOTE) {
-                end_arg();
+                END_ARG();
             } else if (char_in == ESCAPE) {
                 state = SS_QUOTED_ARG_ESCAPED;
             } else {
@@ -93,7 +85,7 @@ size_t esp_console_split_argv(char *line, char **argv, size_t argv_size)
 
         case SS_ARG:
             if (char_in == SPACE) {
-                end_arg();
+                END_ARG();
             } else if (char_in == ESCAPE) {
                 state = SS_ARG_ESCAPED;
             } else {

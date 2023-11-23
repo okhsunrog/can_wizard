@@ -3,6 +3,8 @@
 #include <string.h>
 #include "esp_system.h"
 #include "linenoise/linenoise.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_console.h"
 #include "fs.h"
@@ -19,12 +21,31 @@ void console_task(void* arg) {
      * This can be customized, made dynamic, etc.
      */
     const char* prompt = LOG_COLOR_E PROMPT_STR LOG_RESET_COLOR;
+    // const char* prompt = "dumb_console >";
 
     printf("\n"
            "Type 'help' to get the list of commands.\n"
            "Use UP/DOWN arrows to navigate through command history.\n"
            "Press TAB when typing command name to auto-complete.\n"
            "Ctrl+C will terminate the console environment.\n");
+
+     /* Figure out if the terminal supports escape sequences */
+    int probe_status = linenoiseProbe();
+    // int probe_status = 1;
+    if (probe_status) { /* zero indicates success */
+        printf("\n"
+               "Your terminal application does not support escape sequences.\n"
+               "Line editing and history features are disabled.\n"
+               "On Windows, try using Putty instead.\n");
+        linenoiseSetDumbMode(1);
+    
+#if CONFIG_LOG_COLORS
+        /* Since the terminal doesn't support escape sequences,
+         * don't use color codes in the prompt.
+         */
+        // prompt = "> ";
+#endif //CONFIG_LOG_COLORS
+    }
     
     /* Main loop */
     while (true) {
@@ -33,6 +54,7 @@ void console_task(void* arg) {
          */
         char* line = linenoise(prompt);
         if (line == NULL) { /* Break on EOF or error */
+            ESP_LOGE(TAG, "Ctrl+C???");
             break;
         }
         /* Add the command to the history if not empty*/
@@ -60,4 +82,7 @@ void console_task(void* arg) {
 
     ESP_LOGE(TAG, "Error or end-of-input, terminating console");
     esp_console_deinit();
+    while (true) {
+        vTaskDelay(100);
+    }
 }

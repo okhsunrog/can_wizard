@@ -856,7 +856,8 @@ void linenoiseEditDeletePrevWord(struct linenoiseState *l) {
 // TODO: try to make a non-blocking dumb mode
 static char *linenoiseDumb(struct linenoiseState *l) {
     /* dumb terminal, fall back to fgets */
-    fputs(l->prompt, stdout);
+    // Not needed anymore, prompt is now in linenoiseEditStart
+    // fputs(l->prompt, stdout);
     flushWrite();
     l->len = 0; //needed?
     while (l->len < l->buflen) {
@@ -1008,7 +1009,8 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
         if ((l->in_completion || c == 9) && completionCallback != NULL) {
         c = completeLine(l,c);
         /* Return on errors */
-        if (c < 0) return NULL;
+        // TODO: how was it supposed to work? c can't be less than 0
+        // if (c < 0) return NULL;
         /* Read next character when 0 */
         if (c == 0) return linenoiseEditMore;
     }

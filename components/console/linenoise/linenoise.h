@@ -108,6 +108,7 @@ void linenoiseClearScreen(void);
 void linenoiseSetMultiLine(int ml);
 void linenoiseSetDumbMode(int set);
 bool linenoiseIsDumbMode(void);
+int linenoiseProbe();
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
 int linenoiseSetMaxLineLen(size_t len);
