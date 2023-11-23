@@ -110,6 +110,7 @@ void linenoiseSetDumbMode(int set);
 bool linenoiseIsDumbMode(void);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
+int linenoiseSetMaxLineLen(size_t len);
 
 
 #ifdef __cplusplus
