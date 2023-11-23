@@ -1206,6 +1206,10 @@ int linenoiseProbe() {
         if (cb < 0) {
             continue;
         }
+        if (read_bytes == 0 && c != '\x1b') {
+            /* invalid response */
+            break;
+        }
         read_bytes += cb;
     }
     /* Restore old mode */
