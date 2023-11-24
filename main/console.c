@@ -55,8 +55,13 @@ void console_task_tx(void* arg) {
         if (msg_to_print != NULL) {
             xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
             linenoiseHide(&ls);
-            write(fd, msg_to_print, msg_to_print_size);
-            flushWrite();
+            // if zero-length string - just refresh prompt. used for updating prompt
+            if(msg_to_print[0] != '\0') {
+                write(fd, msg_to_print, msg_to_print_size);
+                flushWrite();
+            } else {
+                ls.prompt = "new prompt > ";
+            }
             linenoiseShow(&ls);
             xSemaphoreGive(stdout_taken_sem);
             vRingbufferReturnItem(can_messages, (void *) msg_to_print);
