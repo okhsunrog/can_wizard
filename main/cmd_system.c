@@ -1,12 +1,3 @@
-/* Console example — various system commands
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -40,7 +31,7 @@ static void register_tasks(void);
 #endif
 static void register_log_level(void);
 
-void register_system_common(void)
+void register_system(void)
 {
     register_free();
     register_heap();
@@ -50,12 +41,6 @@ void register_system_common(void)
     register_tasks();
 #endif
     register_log_level();
-}
-
-
-void register_system(void)
-{
-    register_system_common();
 }
 
 /* 'version' command */

@@ -33,7 +33,8 @@ char prompt[50];
 static void get_prompt(char* prompt_buf) {
     static const char* text = "can_wizard > ";
     static const char* prompt_color = LOG_COLOR_E;
-    memset(prompt_buf,0,strlen(prompt_buf));
+    // memset(prompt_buf,0,strlen(prompt_buf));
+    prompt_buf[0] = '\0';
     if (use_colors) {
         strcat(prompt_buf, prompt_color);
         strcat(prompt_buf, text);
@@ -114,6 +115,7 @@ void console_task_interactive(void* arg) {
         }
         /* linenoise allocates line buffer on the heap, so need to free it */
         linenoiseFree(line);
+        get_prompt(prompt);
         linenoiseEditStart(&ls, buf, console_config.max_cmdline_length, prompt);
     }
 
