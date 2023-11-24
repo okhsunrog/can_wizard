@@ -87,7 +87,10 @@ void console_task_interactive(void* arg) {
        "Press TAB when typing command name to auto-complete.\n"
        "Ctrl+C will terminate the console environment.\n");
     get_prompt(prompt);
-    linenoiseEditStart(&ls, buf, console_config.max_cmdline_length, prompt);
+    ls.buflen = console_config.max_cmdline_length;
+    ls.buf = buf;
+    ls.prompt = prompt;
+    linenoiseEditStart(&ls);
     while (true) {
         line = linenoiseEditFeed(&ls);
         if (line == linenoiseEditMore) continue;
@@ -117,7 +120,7 @@ void console_task_interactive(void* arg) {
         /* linenoise allocates line buffer on the heap, so need to free it */
         linenoiseFree(line);
         get_prompt(prompt);
-        linenoiseEditStart(&ls, buf, console_config.max_cmdline_length, prompt);
+        linenoiseEditStart(&ls);
     }
 
     ESP_LOGE(TAG, "Terminating console");

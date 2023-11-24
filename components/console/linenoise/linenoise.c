@@ -924,14 +924,11 @@ uint32_t getMillis(void) {
  * fails. If stdin_fd or stdout_fd are set to -1, the default is to use
  * STDIN_FILENO and STDOUT_FILENO.
  */
-int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const char *prompt) {
+int linenoiseEditStart(struct linenoiseState *l) {
     /* Populate the linenoise state that we pass to functions implementing
      * specific editing functionalities. */
     l->in_completion = 0;
-    l->buf = buf;
-    l->buflen = buflen;
-    l->prompt = prompt;
-    l->plen = strlen(prompt);
+    l->plen = strlen(l->prompt);
     l->oldpos = l->pos = 0;
     l->len = 0;
     l->cols = getColumns();
@@ -948,7 +945,7 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
     if (!dumbmode) {
         linenoiseHistoryAdd("");
         int pos1 = getCursorPosition();
-        if (fwrite(prompt,l->plen,1,stdout) == -1) {
+        if (fwrite(l->prompt,l->plen,1,stdout) == -1) {
             xSemaphoreGive(stdout_taken_sem);
             return -1;
         }
@@ -958,7 +955,7 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
             l->plen = pos2 - pos1;
         }
     } else {
-        if (fwrite(prompt,l->plen,1,stdout) == -1) {
+        if (fwrite(l->prompt,l->plen,1,stdout) == -1) {
             xSemaphoreGive(stdout_taken_sem);
             return -1;
         }
@@ -1201,16 +1198,19 @@ void linenoiseEditStop(struct linenoiseState *l) {
  * In many applications that are not event-drivern, we can just call
  * the blocking linenoise API, wait for the user to complete the editing
  * and return the buffer. */
-static char *linenoiseBlockingEdit(char *buf, size_t buflen, const char *prompt)
+static char *linenoiseBlockingEdit(char *buf, const char *prompt)
 {
     struct linenoiseState l;
     /* Editing without a buffer is invalid. */
-    if (buflen == 0) {
+    if (buf == NULL) {
         errno = EINVAL;
         return NULL;
     }
     char *res;
-    linenoiseEditStart(&l,buf,buflen,prompt);
+    l.buf = buf;
+    l.buflen = max_cmdline_length;
+    l.prompt = prompt;
+    linenoiseEditStart(&l);
     while((res = linenoiseEditFeed(&l)) == linenoiseEditMore);
     linenoiseEditStop(&l);
     return res;
@@ -1267,7 +1267,7 @@ int linenoiseProbe() {
 /* The high level function that is the main API of the linenoise library. */
 char *linenoise(const char *prompt) {
     char *buf = calloc(1, max_cmdline_length);
-    char *retval = linenoiseBlockingEdit(buf,max_cmdline_length,prompt);
+    char *retval = linenoiseBlockingEdit(buf, prompt);
     free(buf);
     return retval;
 }
