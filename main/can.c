@@ -71,10 +71,24 @@ void can_bus_off_check() {
     }
 }
 
+void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
+    char byte_str[3];
+    out_str[0] = '\0';
+    sprintf(out_str, "can frame: ID: %08X dlc: %d ", (int) can_msg->identifier, can_msg->data_length_code);
+    if (can_msg->data_length_code == 0) {
+        strcat(out_str, "(no data)");
+    } else {
+        strcat(out_str, "data: ");
+        for (int i = 0; i < can_msg->data_length_code; i++) {
+            sprintf(byte_str, "%02X", can_msg->data[i]);
+            strcat(out_str, byte_str);
+        }
+    }
+}
+
 void can_task(void* arg) {
     twai_message_t rx_msg;
-    char byte_str[3];
-    char data_bytes_str[20];
+    char data_bytes_str[50];
     // ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
     for (;;) { // A Task shall never return or exit.
         // esp_task_wdt_reset();
@@ -83,12 +97,7 @@ void can_task(void* arg) {
         // TODO: add software filtering
         // if ((((rx_msg.identifier >> 8) & 0xFF) != CONFIG_DEVICE_ID) && (((rx_msg.identifier >> 8) & 0xFF) != 0xFF)) continue;
         // ESP_LOGI(LOG_TAG, "received can frame: %" PRIu32, rx_msg.identifier);
-        data_bytes_str[0] = '\0';
-        for (int i = 0; i < rx_msg.data_length_code; i++) {
-            sprintf(byte_str, "%02X", rx_msg.data[i]);
-            strcat(data_bytes_str, byte_str);
-        }
-        xprintf("received can frame: ID: %" PRIu32 " dlc: %d data: %s\n", rx_msg.identifier, rx_msg.data_length_code, data_bytes_str);
+        can_msg_to_str(&rx_msg, data_bytes_str); 
+        xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
     }
 }
-
