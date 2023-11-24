@@ -1198,21 +1198,18 @@ void linenoiseEditStop(struct linenoiseState *l) {
  * In many applications that are not event-drivern, we can just call
  * the blocking linenoise API, wait for the user to complete the editing
  * and return the buffer. */
-static char *linenoiseBlockingEdit(char *buf, const char *prompt)
+static char *linenoiseBlockingEdit(struct linenoiseState *l)
 {
-    struct linenoiseState l;
     /* Editing without a buffer is invalid. */
-    if (buf == NULL) {
+    if (l->buf == NULL) {
         errno = EINVAL;
         return NULL;
     }
     char *res;
-    l.buf = buf;
-    l.buflen = max_cmdline_length;
-    l.prompt = prompt;
-    linenoiseEditStart(&l);
-    while((res = linenoiseEditFeed(&l)) == linenoiseEditMore);
-    linenoiseEditStop(&l);
+    l->buflen = max_cmdline_length;
+    linenoiseEditStart(l);
+    while((res = linenoiseEditFeed(l)) == linenoiseEditMore);
+    linenoiseEditStop(l);
     return res;
 }
 
@@ -1265,9 +1262,14 @@ int linenoiseProbe() {
 }
 
 /* The high level function that is the main API of the linenoise library. */
-char *linenoise(const char *prompt) {
+// passing ls_to_pass is optional, you can just provide NULL
+char *linenoise(const char *prompt, struct linenoiseState **ls_to_pass) {
+    struct linenoiseState l;
+    if (ls_to_pass != NULL) *ls_to_pass = &l;
     char *buf = calloc(1, max_cmdline_length);
-    char *retval = linenoiseBlockingEdit(buf, prompt);
+    l.prompt = prompt;
+    l.buf = buf;
+    char *retval = linenoiseBlockingEdit(&l);
     free(buf);
     return retval;
 }

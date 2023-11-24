@@ -87,7 +87,7 @@ void linenoiseHide(struct linenoiseState *l);
 void linenoiseShow(struct linenoiseState *l);
 
 /* Blocking API. */
-char *linenoise(const char *prompt);
+char *linenoise(const char *prompt, struct linenoiseState **ls_to_pass);
 void linenoiseFree(void *ptr);
 
 /* Completion API. */

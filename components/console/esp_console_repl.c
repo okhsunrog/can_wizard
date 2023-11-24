@@ -516,7 +516,7 @@ static void esp_console_repl_task(void *args)
 
     linenoiseSetMaxLineLen(repl_com->max_cmdline_length);
     while (repl_com->state == CONSOLE_REPL_STATE_START) {
-        char *line = linenoise(repl_com->prompt);
+        char *line = linenoise(repl_com->prompt, NULL);
         if (line == NULL) {
             ESP_LOGD(TAG, "empty line");
             /* Ignore empty lines */
