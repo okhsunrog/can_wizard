@@ -1,7 +1,3 @@
-//
-// Created by okhsunrog on 8/17/23.
-//
-
 #ifndef MAIN_CAN_H
 #define MAIN_CAN_H
 

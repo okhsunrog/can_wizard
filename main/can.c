@@ -1,7 +1,3 @@
-//
-// Created by okhsunrog on 8/17/23.
-//
-
 #include "can.h"
 #include "esp_log.h"
 #include "freertos/projdefs.h"
