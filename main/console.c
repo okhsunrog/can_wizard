@@ -30,7 +30,7 @@ static const char* TAG = "console task";
 esp_console_config_t console_config;
 struct linenoiseState ls;
 
-char prompt[50];
+char prompt[40];
 
 static void get_prompt(char* prompt_buf) {
     static const char* text = "can_wizard > ";
@@ -74,7 +74,7 @@ void console_task_interactive(void* arg) {
     char *buf = calloc(1, console_config.max_cmdline_length);
     char *line;
     /* Figure out if the terminal supports escape sequences */
-    printf("Testing your console...");
+    printf("Testing your console...\n");
     int probe_status = linenoiseProbe();
     // int probe_status = 1;
     if (probe_status) { /* zero indicates success */
