@@ -8,6 +8,7 @@
 #include "xvprintf.h"
 #include "can.h"
 
+
 static void register_send_can_frame(void);
 
 void register_can_commands(void) {
@@ -21,18 +22,15 @@ static struct {
 } cansend_args;
 
 static int send_can_frame(int argc, char **argv) {
-    const char *delim = "#";
-    int tmp_can_id = 0;
-    int tmp_id = 0;
-    char printf_str[30];
-    char can_msg_str_buf[40];
+    char printf_str[50];
+    char can_msg_str_buf[50];
     int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansend_args.end, argv[0]);
         return 1;
     }
-    const char* can_msg_ptr = cansend_args.message->sval[0];
 
+    const char *can_msg_ptr = cansend_args.message->sval[0];
     strlcpy(can_msg_str_buf, can_msg_ptr, sizeof(can_msg_str_buf));
     printf("%s\n", can_msg_str_buf);
 

@@ -10,8 +10,8 @@
 void app_main(void) {
     can_init();
     init_tx_ringbuf();
-    xTaskCreate(can_task, "can task", 4096, NULL, CONFIG_CAN_TASK_PRIORITY, NULL);
+    xTaskCreate(can_task, "can task", 4800, NULL, CONFIG_CAN_TASK_PRIORITY, NULL);
     initialize_filesystem();
     initialize_console();
-    xTaskCreate(console_task_interactive, "console tsk int", 4096, NULL, CONFIG_CONSOLE_INT_PRIORITY, NULL);
+    xTaskCreate(console_task_interactive, "console tsk int", 8000, NULL, CONFIG_CONSOLE_INT_PRIORITY, NULL);
 }

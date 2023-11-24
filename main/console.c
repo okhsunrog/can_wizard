@@ -95,7 +95,7 @@ void console_task_interactive(void* arg) {
     ls.buf = buf;
     ls.prompt = prompt;
     linenoiseEditStart(&ls);
-    xTaskCreate(console_task_tx, "console tsk tx", 4096, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
+    xTaskCreate(console_task_tx, "console tsk tx", 5000, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
     esp_log_set_vprintf(&vxprintf);
     while (true) {
         line = linenoiseEditFeed(&ls);
