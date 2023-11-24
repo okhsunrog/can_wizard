@@ -5,6 +5,7 @@ set(COMPONENT_SRCS
         "console.c"
         "fs.c"
         "xvprintf.c"
+        "cmd_can.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS

@@ -6,6 +6,7 @@
 #include "console.h"
 #include "xvprintf.h"
 
+
 void app_main(void) {
     can_init();
     init_tx_ringbuf();

@@ -15,6 +15,7 @@
 #include "esp_vfs_usb_serial_jtag.h"
 #include "driver/usb_serial_jtag.h"
 #include "cmd_system.h"
+#include "cmd_can.h"
 #include "fs.h"
 #include "xvprintf.h"
 
@@ -154,4 +155,5 @@ void initialize_console(void) {
     /* Register commands */
     esp_console_register_help_command();
     register_system();
+    register_can_commands();
 }
