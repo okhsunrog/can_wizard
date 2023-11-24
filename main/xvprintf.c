@@ -8,7 +8,7 @@ RingbufHandle_t can_messages;
 
 
 void init_tx_ringbuf() {
-    can_messages = xRingbufferCreate(1028, RINGBUF_TYPE_NOSPLIT);
+    can_messages = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
     esp_log_set_vprintf(&vxprintf);
 }
 
