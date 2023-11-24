@@ -93,7 +93,7 @@ void can_task(void* arg) {
     for (;;) { // A Task shall never return or exit.
         // esp_task_wdt_reset();
         can_bus_off_check();
-        if (twai_receive(&rx_msg, pdMS_TO_TICKS(10)) != ESP_OK) continue;
+        if (twai_receive(&rx_msg, pdMS_TO_TICKS(1000)) != ESP_OK) continue;
         // TODO: add software filtering
         // if ((((rx_msg.identifier >> 8) & 0xFF) != CONFIG_DEVICE_ID) && (((rx_msg.identifier >> 8) & 0xFF) != 0xFF)) continue;
         // ESP_LOGI(LOG_TAG, "received can frame: %" PRIu32, rx_msg.identifier);
