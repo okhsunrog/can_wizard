@@ -18,7 +18,7 @@ int vxprintf(const char *fmt, va_list args) {
     char msg_to_send[300];
     size_t str_len;
     str_len = vsnprintf(msg_to_send, 299, fmt, args);
-    xRingbufferSend(can_messages, msg_to_send, str_len + 1, pdMS_TO_TICKS(100));
+    xRingbufferSend(can_messages, msg_to_send, str_len + 1, pdMS_TO_TICKS(200));
     return str_len;
 }
 
