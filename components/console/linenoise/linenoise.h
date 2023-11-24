@@ -46,8 +46,12 @@ extern "C" {
 
 #include <stddef.h> /* For size_t. */
 #include <stdbool.h>
+// for semaphore
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 extern char *linenoiseEditMore;
+extern SemaphoreHandle_t stdout_taken_sem;
 
 /* The linenoiseState structure represents the state during line editing.
  * We pass this state to functions implementing specific editing
@@ -112,6 +116,7 @@ int linenoiseProbe();
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
 int linenoiseSetMaxLineLen(size_t len);
+void flushWrite(void);
 
 
 #ifdef __cplusplus

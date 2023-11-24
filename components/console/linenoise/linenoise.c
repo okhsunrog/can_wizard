@@ -139,6 +139,8 @@ static int history_max_len = LINENOISE_DEFAULT_HISTORY_MAX_LEN;
 static int history_len = 0;
 static char **history = NULL;
 
+SemaphoreHandle_t stdout_taken_sem;
+
 
 enum KEY_ACTION{
 	KEY_NULL = 0,	    /* NULL */
@@ -198,7 +200,7 @@ bool linenoiseIsDumbMode(void) {
     return dumbmode;
 }
 
-static void flushWrite(void) {
+void flushWrite(void) {
     if (__fbufsize(stdout) > 0) {
         fflush(stdout);
     }
@@ -858,13 +860,16 @@ static char *linenoiseDumb(struct linenoiseState *l) {
     /* dumb terminal, fall back to fgets */
     // Not needed anymore, prompt is now in linenoiseEditStart
     // fputs(l->prompt, stdout);
-    flushWrite();
+    // flushWrite();
     l->len = 0; //needed?
     while (l->len < l->buflen) {
         int c = fgetc(stdin);
+        xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
         if (c == '\n') {
+            xSemaphoreGive(stdout_taken_sem);
             break;
         } else if (c >= 0x1c && c <= 0x1f){
+            xSemaphoreGive(stdout_taken_sem);
             continue; /* consume arrow keys */
         } else if (c == BACKSPACE || c == 0x8) {
             if (l->len > 0) {
@@ -879,9 +884,12 @@ static char *linenoiseDumb(struct linenoiseState *l) {
         }
         fputc(c, stdout); /* echo */
         flushWrite();
+        xSemaphoreGive(stdout_taken_sem);
     }
+    xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
     fputc('\n', stdout);
     flushWrite();
+    xSemaphoreGive(stdout_taken_sem);
     // if (l->len == 0) return linenoiseEditMore;
     return strdup(l->buf);
 }
@@ -936,19 +944,27 @@ int linenoiseEditStart(struct linenoiseState *l, char *buf, size_t buflen, const
 
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
+    xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
     if (!dumbmode) {
         linenoiseHistoryAdd("");
         int pos1 = getCursorPosition();
-        if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
+        if (fwrite(prompt,l->plen,1,stdout) == -1) {
+            xSemaphoreGive(stdout_taken_sem);
+            return -1;
+        }
         flushWrite();
         int pos2 = getCursorPosition();
         if (pos1 >= 0 && pos2 >= 0) {
             l->plen = pos2 - pos1;
         }
     } else {
-        if (fwrite(prompt,l->plen,1,stdout) == -1) return -1;
+        if (fwrite(prompt,l->plen,1,stdout) == -1) {
+            xSemaphoreGive(stdout_taken_sem);
+            return -1;
+        }
         flushWrite();
     }
+    xSemaphoreGive(stdout_taken_sem);
     return 0;
 }
 
@@ -975,6 +991,7 @@ char *linenoiseEditMore = "If you see this, you are misusing the API: when linen
 char *linenoiseEditFeed(struct linenoiseState *l) {
     if (dumbmode) return linenoiseDumb(l);
     uint32_t t1 = 0;
+    uint32_t t2;
     char c;
     int nread;
     char seq[3];
@@ -990,16 +1007,20 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
      */
     t1 = getMillis();
     nread = fread(&c, 1, 1, stdin);
-    if (nread <= 0) return NULL;
-    // FIXME: line printed twice after pasting something
-    if ( (getMillis() - t1) < LINENOISE_PASTE_KEY_DELAY && c != ENTER) {
+    if (nread <= 0) return linenoiseEditMore;
+    t2 = getMillis();
+    xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
+    // FIXME: line printed twice after pasting something that takes more than 1 line
+    if ( (t2 - t1) < LINENOISE_PASTE_KEY_DELAY && c != ENTER) {
         /* Pasting data, insert characters without formatting.
          * This can only be performed when the cursor is at the end of the
          * line. */
         if (linenoiseInsertPastedChar(l,c)) {
             errno = EIO;
+            xSemaphoreGive(stdout_taken_sem);
             return NULL;
         }
+        xSemaphoreGive(stdout_taken_sem);
         return linenoiseEditMore;
     }
 
@@ -1012,7 +1033,10 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
         // TODO: how was it supposed to work? c can't be less than 0
         // if (c < 0) return NULL;
         /* Read next character when 0 */
-        if (c == 0) return linenoiseEditMore;
+        if (c == 0) {
+            xSemaphoreGive(stdout_taken_sem);
+            return linenoiseEditMore;
+        }
     }
 
     switch(c) {
@@ -1028,9 +1052,11 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
             refreshLine(l);
             hintsCallback = hc;
         }
+        xSemaphoreGive(stdout_taken_sem);
         return strdup(l->buf);
     case CTRL_C:     /* ctrl-c */
         errno = EAGAIN;
+        xSemaphoreGive(stdout_taken_sem);
         return NULL;
     case BACKSPACE:   /* backspace */
     case 8:     /* ctrl-h */
@@ -1044,6 +1070,7 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
             history_len--;
             free(history[history_len]);
             errno = ENOENT;
+            xSemaphoreGive(stdout_taken_sem);
             return NULL;
         }
         break;
@@ -1124,7 +1151,10 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
         }
         break;
     default:
-        if (linenoiseEditInsert(l,c)) return NULL;
+        if (linenoiseEditInsert(l,c)) {
+            xSemaphoreGive(stdout_taken_sem);
+            return NULL;
+        }
         break;
     case CTRL_U: /* Ctrl+u, delete the whole line. */
         l->buf[0] = '\0';
@@ -1151,6 +1181,7 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
         break;
     }
     flushWrite();
+    xSemaphoreGive(stdout_taken_sem);
     return linenoiseEditMore;
 }
 
@@ -1160,8 +1191,10 @@ char *linenoiseEditFeed(struct linenoiseState *l) {
  * returns something different than NULL. At this point the user input
  * is in the buffer, and we can restore the terminal in normal mode. */
 void linenoiseEditStop(struct linenoiseState *l) {
+    xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
     fputc('\n', stdout);
     flushWrite();
+    xSemaphoreGive(stdout_taken_sem);
 }
 
 /* This just implements a blocking loop for the multiplexed API.
@@ -1184,12 +1217,14 @@ static char *linenoiseBlockingEdit(char *buf, size_t buflen, const char *prompt)
 }
 
 int linenoiseProbe() {
+    xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
     /* Switch to non-blocking mode */
     int stdin_fileno = fileno(stdin);
     int flags = fcntl(stdin_fileno, F_GETFL);
     flags |= O_NONBLOCK;
     int res = fcntl(stdin_fileno, F_SETFL, flags);
     if (res != 0) {
+        xSemaphoreGive(stdout_taken_sem);
         return -1;
     }
     /* Device status request */
@@ -1218,11 +1253,14 @@ int linenoiseProbe() {
     flags &= ~O_NONBLOCK;
     res = fcntl(stdin_fileno, F_SETFL, flags);
     if (res != 0) {
+        xSemaphoreGive(stdout_taken_sem);
         return -1;
     }
     if (read_bytes < 4) {
+        xSemaphoreGive(stdout_taken_sem);
         return -2;
     }
+    xSemaphoreGive(stdout_taken_sem);
     return 0;
 }
 

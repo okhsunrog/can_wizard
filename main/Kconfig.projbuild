@@ -25,12 +25,19 @@ menu "Can_wizard Configuration"
         help
             A priority of FreeRTOS task can_task. See more about tasks priorities in FreeRTOS documentation.
 
-    config CONSOLE_TASK_PRIORITY
-        int "Console task priority"
+    config CONSOLE_TX_PRIORITY
+        int "Console task TX priority"
         range 0 22
         default 2
         help
-            A priority of FreeRTOS task can_task. See more about tasks priorities in FreeRTOS documentation.
+            A priority of FreeRTOS task can_task_tx. See more about tasks priorities in FreeRTOS documentation.
+
+    config CONSOLE_INT_PRIORITY
+        int "Console task interactive priority"
+        range 0 22
+        default 1
+        help
+            A priority of FreeRTOS task can_task_interactive. See more about tasks priorities in FreeRTOS documentation.
 
 
 

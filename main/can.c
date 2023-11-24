@@ -4,9 +4,14 @@
 
 #include "can.h"
 #include "esp_log.h"
+#include "freertos/projdefs.h"
 #include "hal/twai_types.h"
 #include "sdkconfig.h"
+#include <stddef.h>
 #include <stdio.h>
+#include "freertos/ringbuf.h"
+#include "xvprintf.h"
+
 
 static const twai_timing_config_t t_config = TWAI_TIMING_CONFIG_125KBITS();
 static const twai_general_config_t g_config = {
@@ -74,8 +79,8 @@ void can_task(void* arg) {
         if (twai_receive(&rx_msg, pdMS_TO_TICKS(10)) != ESP_OK) continue;
         // TODO: add software filtering
         // if ((((rx_msg.identifier >> 8) & 0xFF) != CONFIG_DEVICE_ID) && (((rx_msg.identifier >> 8) & 0xFF) != 0xFF)) continue;
-        ESP_LOGI(LOG_TAG, "received can package with ID: %" PRIu32, rx_msg.identifier);
-        // printf("received can package with ID: %" PRIu32, rx_msg.identifier);
+        // ESP_LOGI(LOG_TAG, "received can frame: %" PRIu32, rx_msg.identifier);
+        xprintf("received can frame: %" PRIu32 "\n", rx_msg.identifier);
     }
 }
 

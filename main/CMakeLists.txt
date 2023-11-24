@@ -2,8 +2,9 @@ set(COMPONENT_SRCS
         "main.c"
         "cmd_system.c"
         "can.c"
-        "console_task.c"
+        "console.c"
         "fs.c"
+        "xvprintf.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS
