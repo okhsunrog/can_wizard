@@ -13,6 +13,5 @@ void app_main(void) {
     xTaskCreate(can_task, "can task", 4096, NULL, CONFIG_CAN_TASK_PRIORITY, NULL);
     initialize_filesystem();
     initialize_console();
-    xTaskCreate(console_task_tx, "console tsk tx", 4096, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
     xTaskCreate(console_task_interactive, "console tsk int", 4096, NULL, CONFIG_CONSOLE_INT_PRIORITY, NULL);
 }

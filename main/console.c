@@ -12,6 +12,7 @@
 #include "linenoise/linenoise.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_vfs_usb_serial_jtag.h"
 #include "driver/usb_serial_jtag.h"
 #include "cmd_system.h"
@@ -49,7 +50,6 @@ void console_task_tx(void* arg) {
     const int fd = fileno(stdout);
     char *msg_to_print;
     size_t msg_to_print_size;
-    vTaskDelay(pdMS_TO_TICKS(200));
     while(1) {
         msg_to_print = (char *)xRingbufferReceive(can_messages, &msg_to_print_size, portMAX_DELAY);
         if (msg_to_print != NULL) {
@@ -68,7 +68,6 @@ void console_task_interactive(void* arg) {
     stdout_taken_sem = xSemaphoreCreateMutex();
     char *buf = calloc(1, console_config.max_cmdline_length);
     char *line;
-    vTaskDelay(pdMS_TO_TICKS(15)); //give some time for app_main to finish
     /* Figure out if the terminal supports escape sequences */
     printf("Testing your console...");
     int probe_status = linenoiseProbe();
@@ -91,6 +90,8 @@ void console_task_interactive(void* arg) {
     ls.buf = buf;
     ls.prompt = prompt;
     linenoiseEditStart(&ls);
+    xTaskCreate(console_task_tx, "console tsk tx", 4096, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
+    esp_log_set_vprintf(&vxprintf);
     while (true) {
         line = linenoiseEditFeed(&ls);
         if (line == linenoiseEditMore) continue;
@@ -119,7 +120,6 @@ void console_task_interactive(void* arg) {
         }
         /* linenoise allocates line buffer on the heap, so need to free it */
         linenoiseFree(line);
-        get_prompt(prompt);
         linenoiseEditStart(&ls);
     }
 

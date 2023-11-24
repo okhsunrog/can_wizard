@@ -9,7 +9,6 @@ RingbufHandle_t can_messages;
 
 void init_tx_ringbuf() {
     can_messages = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
-    esp_log_set_vprintf(&vxprintf);
 }
 
 // This function will be called by the ESP log library every time ESP_LOG needs to be performed.
