@@ -1,4 +1,5 @@
 #include "cmd_can.h"
+#include "inttypes.h"
 #include "driver/twai.h"
 #include "freertos/projdefs.h"
 #include "hal/twai_types.h"

@@ -10,21 +10,27 @@
 #include "xvprintf.h"
 
 
-static const twai_timing_config_t t_config = TWAI_TIMING_CONFIG_125KBITS();
-static const twai_general_config_t g_config = {
-    .mode = TWAI_MODE_NORMAL,
-    .tx_io = CONFIG_CAN_TX_GPIO,
-    .rx_io = CONFIG_CAN_RX_GPIO,
-    .clkout_io = TWAI_IO_UNUSED,
-    .bus_off_io = TWAI_IO_UNUSED,
-    .tx_queue_len = 5,
-    .rx_queue_len = 5,
-    .alerts_enabled = TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED,
-    .clkout_divider = 0,
-    .intr_flags = ESP_INTR_FLAG_LEVEL1,
-};
 
 static const char* LOG_TAG = "can";
+
+bool is_error_passive = false;
+
+can_state_e get_can_state() {
+    twai_status_info_t status;
+    esp_err_t res = twai_get_status_info(&status);
+    if (res != ESP_OK) return CAN_NOT_INSTALLED;
+    switch (status.state) {
+        case TWAI_STATE_STOPPED:
+            return CAN_STOPPED;
+        case TWAI_STATE_BUS_OFF:
+            return CAN_BUF_OFF;
+        case TWAI_STATE_RECOVERING:
+            return CAN_RECOVERING;
+        default:
+            if (is_error_passive) return CAN_ERROR_PASSIVE;
+            else return CAN_ERROR_ACTIVE;
+    }
+}
 
 void can_init() {
     // Install CAN driver
