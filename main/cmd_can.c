@@ -99,20 +99,17 @@ static const char* can_states_str[] = {
 };
 
 static int canstats(int argc, char **argv) {
-    can_state_e canstate = get_can_state();
-    if (canstate == CAN_NOT_INSTALLED) {
+    if (curr_can_state.state == CAN_NOT_INSTALLED) {
         printf("CAN driver is not installed!");
         return 0;
     } else {
-        twai_status_info_t status;
-        twai_get_status_info(&status);
-        const char *state_str = can_states_str[canstate];
+        const char *state_str = can_states_str[curr_can_state.state];
         printf("status: %s\n", state_str);
-        printf("TX Err Counter: %" PRIu32 "\n", status.tx_error_counter);
-        printf("RX Err Counter: %" PRIu32 "\n", status.rx_error_counter);
-        printf("Failed transmit: %" PRIu32 "\n", status.tx_failed_count);
-        printf("Arbitration lost times: %" PRIu32 "\n", status.arb_lost_count);
-        printf("Bus-off count: %" PRIu32 "\n", status.bus_error_count);
+        printf("TX Err Counter: %" PRIu32 "\n", curr_can_state.tx_error_counter);
+        printf("RX Err Counter: %" PRIu32 "\n", curr_can_state.rx_error_counter);
+        printf("Failed transmit: %" PRIu32 "\n", curr_can_state.tx_failed_count);
+        printf("Arbitration lost times: %" PRIu32 "\n", curr_can_state.arb_lost_count);
+        printf("Bus-off count: %" PRIu32 "\n", curr_can_state.bus_error_count);
     }
     return 0;
 }

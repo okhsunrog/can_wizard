@@ -16,21 +16,39 @@ bool is_error_passive = false;
 SemaphoreHandle_t can_mutex;
 can_status_t curr_can_state = { 0 };
 
-can_state_e get_can_state() {
-    twai_status_info_t status;
+static can_status_t get_can_state() {
+    can_status_t result;
+    twai_status_info_t status = { 0 };
     esp_err_t res = twai_get_status_info(&status);
-    if (res != ESP_OK) return CAN_NOT_INSTALLED;
+    if (res != ESP_OK) {
+        result.state = CAN_NOT_INSTALLED;
+        return result;
+    }
+    result.msgs_to_rx = status.msgs_to_rx;
+    result.msgs_to_tx = status.msgs_to_tx;
+    result.arb_lost_count = status.arb_lost_count;
+    result.bus_error_count = status.bus_error_count;
+    result.tx_error_counter = status.tx_error_counter;
+    result.rx_error_counter = status.rx_error_counter;
+    result.tx_failed_count = status.tx_failed_count;
+    result.rx_missed_count = status.rx_missed_count;
+    result.rx_overrun_count = status.rx_overrun_count;
     switch (status.state) {
         case TWAI_STATE_STOPPED:
-            return CAN_STOPPED;
+            result.state = CAN_STOPPED;
+            break;
         case TWAI_STATE_BUS_OFF:
-            return CAN_BUF_OFF;
+            result.state = CAN_BUF_OFF;
+            break;
         case TWAI_STATE_RECOVERING:
-            return CAN_RECOVERING;
+            result.state = CAN_RECOVERING;
+            break;
         default:
-            if (is_error_passive) return CAN_ERROR_PASSIVE;
-            else return CAN_ERROR_ACTIVE;
+            if (is_error_passive) result.state = CAN_ERROR_PASSIVE;
+            else result.state = CAN_ERROR_ACTIVE;
+            break;
     }
+    return result;
 }
 
 void can_init() {
@@ -89,6 +107,7 @@ void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
     }
 }
 
+// TODO: add software filtering
 void can_task(void* arg) {
     can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
@@ -96,12 +115,14 @@ void can_task(void* arg) {
     // ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
     for (;;) { // A Task shall never return or exit.
         // esp_task_wdt_reset();
-        can_bus_off_check();
-        if (twai_receive(&rx_msg, pdMS_TO_TICKS(1000)) != ESP_OK) continue;
-        // TODO: add software filtering
-        // if ((((rx_msg.identifier >> 8) & 0xFF) != CONFIG_DEVICE_ID) && (((rx_msg.identifier >> 8) & 0xFF) != 0xFF)) continue;
-        // ESP_LOGI(LOG_TAG, "received can frame: %" PRIu32, rx_msg.identifier);
-        can_msg_to_str(&rx_msg, data_bytes_str); 
-        xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
+        // can_bus_off_check();
+        curr_can_state = get_can_state();
+        xSemaphoreTake(can_mutex, pdMS_TO_TICKS(200));
+        while(twai_receive(&rx_msg, 0) == ESP_OK) {
+            can_msg_to_str(&rx_msg, data_bytes_str); 
+            xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
+        }
+        xSemaphoreGive(can_mutex);
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

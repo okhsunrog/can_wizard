@@ -61,6 +61,5 @@ void calculate_hw_can_filter(uint32_t device_id, twai_filter_config_t* filter, b
 void can_bus_off_check();
 void can_task(void* arg);
 void can_msg_to_str(twai_message_t *can_msg, char *out_str);
-can_state_e get_can_state();
 
 #endif // MAIN_CAN_H
