@@ -9,11 +9,12 @@
 #include "freertos/ringbuf.h"
 #include "xvprintf.h"
 
-
-
 static const char* LOG_TAG = "can";
 
 bool is_error_passive = false;
+
+SemaphoreHandle_t can_mutex;
+can_status_t curr_can_state = { 0 };
 
 can_state_e get_can_state() {
     twai_status_info_t status;
@@ -89,6 +90,7 @@ void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
 }
 
 void can_task(void* arg) {
+    can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
     char data_bytes_str[50];
     // ESP_ERROR_CHECK(esp_task_wdt_add(NULL));

@@ -8,7 +8,6 @@
 
 
 void app_main(void) {
-    can_init();
     init_tx_ringbuf();
     xTaskCreate(can_task, "can task", 4800, NULL, CONFIG_CAN_TASK_PRIORITY, NULL);
     initialize_filesystem();

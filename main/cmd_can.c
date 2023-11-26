@@ -1,4 +1,5 @@
 #include "cmd_can.h"
+#include "freertos/portmacro.h"
 #include "inttypes.h"
 #include "driver/twai.h"
 #include "freertos/projdefs.h"
@@ -13,7 +14,6 @@
 #include <ctype.h>
 
 static void register_send_can_frame(void);
-static void register_send_can_frame(void);
 static void register_canup(void);
 static void register_candown(void);
 static void register_canstats(void);
@@ -22,7 +22,11 @@ static void register_canrecover(void);
 
 void register_can_commands(void) {
     register_send_can_frame();
-    
+    register_canup();
+    register_candown();
+    register_canstats();
+    register_canstart();
+    register_canrecover();
 }
 
 static struct {
@@ -114,31 +118,38 @@ static int canstats(int argc, char **argv) {
 }
 
 static int canup(int argc, char **argv) {
+    esp_err_t res;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
     // Install CAN driver
     // TODO: add CAN filtering
     static twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
-    esp_err_t res = twai_driver_install(&g_config, &t_config, &f_config);
+    res = twai_driver_install(&g_config, &t_config, &f_config);
     if (res != ESP_OK) {
         printf("Couldn't install CAN driver! Rebooting...\n");
         esp_restart();
     }
     printf("CAN driver installed\n");
     // Start CAN driver
-    ESP_ERROR_CHECK(twai_start());
+    res = twai_start();
     printf("CAN driver started\n");
+    xSemaphoreGive(can_mutex);
     return 0;
 }
 
 static int canstart(int argc, char **argv) {
     // Start CAN driver
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
     ESP_ERROR_CHECK(twai_start());
     printf("CAN driver started\n");
+    xSemaphoreGive(can_mutex);
     return 0;
 }
 
 static int candown(int argc, char **argv) {
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
     ESP_ERROR_CHECK(twai_stop());
     ESP_ERROR_CHECK(twai_driver_uninstall());
+    xSemaphoreGive(can_mutex);
     return 0;
 }
 
