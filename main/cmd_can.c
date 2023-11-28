@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <ctype.h>
 
-static void register_send_can_frame(void);
+static void register_cansend(void);
 static void register_canup(void);
 static void register_candown(void);
 static void register_canstats(void);
@@ -20,7 +20,7 @@ static void register_canstart(void);
 static void register_canrecover(void);
 
 void register_can_commands(void) {
-    register_send_can_frame();
+    register_cansend();
     register_canup();
     register_candown();
     register_canstats();
@@ -132,9 +132,13 @@ static int canstats(int argc, char **argv) {
 static int canup(int argc, char **argv) {
     esp_err_t res;
     esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
+    int nerrors = arg_parse(argc, argv, (void **) &canup_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, canup_args.end, argv[0]);
+        return 1;
+    }
     esp_log_level_set("gpio", ESP_LOG_ERROR);
     xSemaphoreTake(can_mutex, portMAX_DELAY);
-    // Install CAN driver
     // TODO: add CAN filtering
     static twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
     res = twai_driver_install(&g_config, &t_config, &f_config);
@@ -143,7 +147,6 @@ static int canup(int argc, char **argv) {
         esp_restart();
     }
     printf("CAN driver installed\n");
-    // Start CAN driver
     res = twai_start();
     printf("CAN driver started\n");
     xSemaphoreGive(can_mutex);
@@ -176,10 +179,10 @@ static int candown(int argc, char **argv) {
     return 0;
 }
 
-static void register_send_can_frame(void) {
+static void register_cansend(void) {
     
     cansend_args.message = arg_str1(NULL, NULL, "ID#data", "Message to send, ID and data bytes, all in hex. # is the delimiter.");
-    cansend_args.end = arg_end(2);
+    cansend_args.end = arg_end(1);
 
     const esp_console_cmd_t cmd = {
         .command = "cansend",
@@ -192,11 +195,13 @@ static void register_send_can_frame(void) {
 }
 
 static void register_canup(void) {
+
     canup_args.speed = arg_str1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See helo for supported speeds.");
     canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only", "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
     canup_args.filters = arg_str0("f", "filters", "<filters>", "CAN filters to receive only selected frames.");
     canup_args.autorecover = arg_str0("r", "auto-recovery", "<1|0>", "Set 1 to enable auto-recovery of CAN bus if case of bus-off event, disabled by default.");
-    canup_args.end = arg_end(2);
+    canup_args.end = arg_end(4);
+
     const esp_console_cmd_t cmd = {
         .command = "canup",
         .help = "Install can drivers and start can interface. Used right after board start or during runtime for changing CAN configuration. Supported speeds: 1mbits, 800kbits, 500kbits, 250kbits, 125kbits, 100kbits, 50kbits, 25kbits, 20kbits, 16kbits, 12.5kbits, 10kbits, 5kbits, 1kbits.",
