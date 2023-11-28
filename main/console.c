@@ -128,8 +128,9 @@ void console_task_interactive(void* arg) {
         linenoiseEditStart(&ls);
     }
 
-    ESP_LOGE(TAG, "Terminating console");
+    ESP_LOGE(TAG, "Restarting...");
     esp_console_deinit();
+    esp_restart();
     while (1) {
         vTaskDelay(100);
     }
@@ -157,7 +158,7 @@ void initialize_console(void) {
     // linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(&esp_console_get_completion);
     linenoiseSetHintsCallback((linenoiseHintsCallback*) &esp_console_get_hint);
-    linenoiseHistorySetMaxLen(100);
+    linenoiseHistorySetMaxLen(30);
     linenoiseSetMaxLineLen(console_config.max_cmdline_length);
     linenoiseHistoryLoad(HISTORY_PATH);
     /* Register commands */
