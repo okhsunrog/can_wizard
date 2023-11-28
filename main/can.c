@@ -10,6 +10,7 @@
 #include "xvprintf.h"
 
 bool is_error_passive = false;
+bool auto_recovery = false;
 
 SemaphoreHandle_t can_mutex;
 volatile can_status_t curr_can_state = { 0 };
@@ -86,11 +87,17 @@ void can_task(void* arg) {
             }
             if (alerts & TWAI_ALERT_BUS_OFF) {
                 print_w_clr_time("CAN went bus-off!", LOG_COLOR_RED, false);
-                // ESP_ERROR_CHECK(twai_initiate_recovery());
+                if (auto_recovery) {
+                    print_w_clr_time("Initiating auto-recovery...", LOG_COLOR_GREEN, false);
+                    twai_initiate_recovery();
+                }
             }
             if (alerts & TWAI_ALERT_BUS_RECOVERED) {
                 print_w_clr_time("CAN recovered!", LOG_COLOR_BLUE, false);
-                // ESP_ERROR_CHECK(twai_start());
+                if (auto_recovery) {
+                    print_w_clr_time("Starting CAN...", LOG_COLOR_GREEN, false);
+                    twai_start();
+                }
             }
         }
         curr_can_state = get_can_state();

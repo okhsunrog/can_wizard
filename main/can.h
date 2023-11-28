@@ -40,6 +40,7 @@ typedef struct {
 extern SemaphoreHandle_t can_mutex;
 extern volatile can_status_t curr_can_state;
 extern bool timestamp_enabled;
+extern bool auto_recovery;
 
 // functions
 

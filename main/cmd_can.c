@@ -1,4 +1,5 @@
 #include "cmd_can.h"
+#include "can.h"
 #include "esp_log.h"
 #include "inttypes.h"
 #include "freertos/projdefs.h"
@@ -83,6 +84,10 @@ invalid_args:
 
 
 static int canrecover(int argc, char **argv) {
+    esp_err_t res = twai_initiate_recovery();
+    if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, false);
+    else if (curr_can_state.state == CAN_NOT_INSTALLED) print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, false);
+    else print_w_clr_time("Can't start recovery - not in bus-off state!", LOG_COLOR_RED, false);
     return 0;
 }
 
@@ -169,7 +174,7 @@ static void register_canup(void) {
     canup_args.speed = arg_str1(NULL, NULL, "<25|50|100|125|250|500|800|1000>", "CAN bus speed, in kbits.");
     canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only", "Set CAN mode. Normal, No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
     canup_args.filters = arg_str0("f", "filters", "<filters>", "CAN filters to receive only selected frames.");
-    canup_args.autorecover = arg_str0("r", "auto-recover", "<1|0>", "Set 1 to enable auto-recovery of CAN bus if case of bus-off event.");
+    canup_args.autorecover = arg_str0("r", "auto-recovery", "<1|0>", "Set 1 to enable auto-recovery of CAN bus if case of bus-off event.");
     canup_args.end = arg_end(2);
     const esp_console_cmd_t cmd = {
         .command = "canup",
