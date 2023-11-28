@@ -39,8 +39,8 @@ static int timestamp(int argc, char **argv) {
 
 static void register_timestamp(void) {
 
-    timestamp_args.disable = arg_litn("d", "disable", 0, 1, "Set to disable timestamps.");
-    timestamp_args.end = arg_end(1);
+    timestamp_args.disable = arg_lit0("d", "disable", "Set to disable timestamps.");
+    timestamp_args.end = arg_end(2);
 
     const esp_console_cmd_t cmd = {
         .command = "timestamp",

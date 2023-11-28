@@ -34,7 +34,7 @@ static struct {
 } cansend_args;
 
 static struct {
-    struct arg_str *speed;
+    struct arg_int *speed;
     struct arg_str *filters;
     struct arg_lit *autorecover;
     struct arg_str *mode;
@@ -182,7 +182,7 @@ static int candown(int argc, char **argv) {
 static void register_cansend(void) {
     
     cansend_args.message = arg_str1(NULL, NULL, "ID#data", "Message to send, ID and data bytes, all in hex. # is the delimiter.");
-    cansend_args.end = arg_end(1);
+    cansend_args.end = arg_end(2);
 
     const esp_console_cmd_t cmd = {
         .command = "cansend",
@@ -196,10 +196,10 @@ static void register_cansend(void) {
 
 static void register_canup(void) {
 
-    canup_args.speed = arg_str1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See help for supported speeds.");
+    canup_args.speed = arg_int1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See help for supported speeds.");
     canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only>", "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
     canup_args.filters = arg_str0("f", "filters", "<filters>", "CAN filters to receive only selected frames.");
-    canup_args.autorecover = arg_litn("r", "auto-recovery", 0, 1, "Set to enable auto-recovery of CAN bus if case of bus-off event");
+    canup_args.autorecover = arg_lit0("r", "auto-recovery", "Set to enable auto-recovery of CAN bus if case of bus-off event");
     canup_args.end = arg_end(4);
 
     const esp_console_cmd_t cmd = {
