@@ -66,7 +66,7 @@ void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
 
 // TODO: add software filtering
 void can_task(void* arg) {
-    static const TickType_t can_task_timeout = pdMS_TO_TICKS(100);
+    static const TickType_t can_task_timeout = pdMS_TO_TICKS(200);
     uint32_t alerts = 0;
     esp_err_t ret = ESP_OK;
     BaseType_t sem_res;
@@ -101,6 +101,7 @@ void can_task(void* arg) {
                 print_w_clr_time(data_bytes_str, LOG_COLOR_BLUE, false);
             }
             xSemaphoreGive(can_mutex);
+            vTaskDelay(1);
         }
         if (sem_res != pdTRUE || ret == ESP_ERR_INVALID_STATE || ret == ESP_ERR_NOT_SUPPORTED) {
             vTaskDelay(can_task_timeout);
