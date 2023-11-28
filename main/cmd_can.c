@@ -237,6 +237,7 @@ static int canup(int argc, char **argv) {
         esp_restart();
     }
     ESP_ERROR_CHECK(twai_start());
+    is_error_passive = false;
     print_w_clr_time("CAN driver started", LOG_COLOR_BLUE, true);
 free_exit:
     xSemaphoreGive(can_mutex);
@@ -247,8 +248,10 @@ free_exit:
 static int canstart(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     esp_err_t res = twai_start();
-    if (res == ESP_OK) print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, true);
-    else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, true);
+    if (res == ESP_OK) {
+        print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, true);
+        is_error_passive = false;
+    } else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, true);
     xSemaphoreGive(can_mutex);
     return 0;
 }

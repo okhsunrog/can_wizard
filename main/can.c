@@ -1,4 +1,5 @@
 #include "can.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
@@ -96,7 +97,8 @@ void can_task(void* arg) {
                 print_w_clr_time("CAN recovered!", LOG_COLOR_BLUE, false);
                 if (auto_recovery) {
                     print_w_clr_time("Starting CAN...", LOG_COLOR_GREEN, false);
-                    twai_start();
+                    ESP_ERROR_CHECK(twai_start());
+                    is_error_passive = false;
                 }
             }
         }

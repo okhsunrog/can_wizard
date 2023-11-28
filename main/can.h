@@ -41,6 +41,7 @@ extern SemaphoreHandle_t can_mutex;
 extern volatile can_status_t curr_can_state;
 extern bool timestamp_enabled;
 extern bool auto_recovery;
+extern bool is_error_passive;
 
 // functions
 
