@@ -71,9 +71,22 @@ static int send_can_frame(int argc, char **argv) {
     }
     msg.data_length_code = dt_l / 2;
     msg.identifier = msg_id;
-    twai_transmit(&msg, pdMS_TO_TICKS(1000));
-    can_msg_to_str(&msg, "sent ", printf_str);
-    print_w_clr_time(printf_str, NULL, true);
+    esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
+    switch(res) {
+        case ESP_OK:
+            can_msg_to_str(&msg, "sent ", printf_str);
+            print_w_clr_time(printf_str, NULL, true);
+            break;
+        case ESP_ERR_TIMEOUT:
+            print_w_clr_time("Timeout!", LOG_COLOR_RED, false);
+            break;
+        case ESP_ERR_NOT_SUPPORTED:
+            print_w_clr_time("Can't sent in Listen-Only mode!", LOG_COLOR_RED, false);
+            break;
+        default:
+            print_w_clr_time("Invalid state!", LOG_COLOR_RED, false);
+            break;
+    }
     free(can_msg_str_buf);
     return 0;
 invalid_args:
