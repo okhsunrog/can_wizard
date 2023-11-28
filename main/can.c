@@ -8,8 +8,6 @@
 #include "freertos/ringbuf.h"
 #include "xvprintf.h"
 
-static const char* LOG_TAG = "can";
-
 bool is_error_passive = false;
 
 SemaphoreHandle_t can_mutex;
@@ -50,10 +48,10 @@ static can_status_t get_can_state() {
     return result;
 }
 
-void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
+void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
     char byte_str[3];
     out_str[0] = '\0';
-    sprintf(out_str, "can frame: ID: %08X dlc: %d ", (int) can_msg->identifier, can_msg->data_length_code);
+    sprintf(out_str, "%scan frame: ID: %08X dlc: %d ", start_str, (int) can_msg->identifier, can_msg->data_length_code);
     if (can_msg->data_length_code == 0) {
         strcat(out_str, "(no data)");
     } else {
@@ -67,11 +65,11 @@ void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
 
 // TODO: add software filtering
 void can_task(void* arg) {
-    static const TickType_t can_task_timeout = pdMS_TO_TICKS(100);
+    static const TickType_t can_task_timeout = pdMS_TO_TICKS(10);
     uint32_t alerts = 0;
     can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
-    char data_bytes_str[50];
+    char data_bytes_str[70];
     for (;;) { // A Task shall never return or exit.
         if (twai_read_alerts(&alerts, 0) == ESP_OK) {
             if (alerts & TWAI_ALERT_ERR_ACTIVE) {
@@ -81,22 +79,22 @@ void can_task(void* arg) {
                 is_error_passive = true;
             }
             if (alerts & TWAI_ALERT_BUS_ERROR) {
-                ESP_LOGE(LOG_TAG, "CAN error!");
+                print_w_clr_time("CAN error!", LOG_COLOR_RED, false);
             }
             if (alerts & TWAI_ALERT_BUS_OFF) {
-                ESP_LOGE(LOG_TAG, "CAN went bus-off!");
+                print_w_clr_time("CAN went bus-off!", LOG_COLOR_RED, false);
                 // ESP_ERROR_CHECK(twai_initiate_recovery());
             }
             if (alerts & TWAI_ALERT_BUS_RECOVERED) {
-                ESP_LOGI(LOG_TAG, "CAN recovered!");
+                print_w_clr_time("CAN recovered!", LOG_COLOR_BLUE, false);
                 // ESP_ERROR_CHECK(twai_start());
             }
         }
         curr_can_state = get_can_state();
         if (xSemaphoreTake(can_mutex, 0) == pdTRUE) {
             while (twai_receive(&rx_msg, 0) == ESP_OK) {
-                can_msg_to_str(&rx_msg, data_bytes_str); 
-                xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
+                can_msg_to_str(&rx_msg, "recv ", data_bytes_str); 
+                print_w_clr_time(data_bytes_str, LOG_COLOR_BLUE, false);
             }
             xSemaphoreGive(can_mutex);
         }

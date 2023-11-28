@@ -41,7 +41,7 @@ static struct {
 
 static int send_can_frame(int argc, char **argv) {
     twai_message_t msg = {.extd = 1};
-    char printf_str[50];
+    char printf_str[70];
     int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansend_args.end, argv[0]);
@@ -71,9 +71,9 @@ static int send_can_frame(int argc, char **argv) {
     msg.data_length_code = dt_l / 2;
     msg.identifier = msg_id;
     twai_transmit(&msg, pdMS_TO_TICKS(1000));
-    can_msg_to_str(&msg, printf_str);
-    printf("sent %s\n", printf_str);
-    // free(can_msg_str_buf);
+    can_msg_to_str(&msg, "sent ", printf_str);
+    print_w_clr_time(printf_str, NULL, true);
+    free(can_msg_str_buf);
     return 0;
 invalid_args:
     printf("Invalid arguments!\n");

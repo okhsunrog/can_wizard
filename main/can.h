@@ -39,10 +39,11 @@ typedef struct {
 
 extern SemaphoreHandle_t can_mutex;
 extern volatile can_status_t curr_can_state;
+extern bool timestamp_enabled;
 
 // functions
 
 void can_task(void* arg);
-void can_msg_to_str(twai_message_t *can_msg, char *out_str);
+void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str);
 
 #endif // MAIN_CAN_H

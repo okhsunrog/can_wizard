@@ -5,7 +5,7 @@
 #include "esp_log.h"
 
 RingbufHandle_t can_messages;
-
+bool timestamp_enabled = true;
 
 void init_tx_ringbuf() {
     can_messages = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
@@ -25,4 +25,20 @@ int xprintf(const char *fmt, ...) {
     va_list(args);
     va_start(args, fmt);
     return vxprintf(fmt, args);
+}
+
+int print_w_clr_time(char *msg, char *color, bool use_printf) {
+    print_func pr_func;
+    if (use_printf) pr_func = printf;
+    else pr_func = xprintf;
+    char timestamp[20];
+    timestamp[0] = '\0';
+    if (timestamp_enabled) {
+        snprintf(timestamp, 19, "[%s] ", esp_log_system_timestamp());
+    }
+    if (color != NULL) {
+        return(pr_func("\033[0;%sm%s%s\033[0m\n", color, timestamp, msg));
+    } else {
+        return(pr_func("%s%s\n", timestamp, msg));
+    }
 }
