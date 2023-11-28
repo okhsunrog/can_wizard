@@ -1,4 +1,5 @@
 #include "cmd_can.h"
+#include "esp_log.h"
 #include "freertos/portmacro.h"
 #include "inttypes.h"
 #include "driver/twai.h"
@@ -116,6 +117,8 @@ static int canstats(int argc, char **argv) {
 
 static int canup(int argc, char **argv) {
     esp_err_t res;
+    esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
+    esp_log_level_set("gpio", ESP_LOG_ERROR);
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     // Install CAN driver
     // TODO: add CAN filtering
@@ -130,6 +133,7 @@ static int canup(int argc, char **argv) {
     res = twai_start();
     printf("CAN driver started\n");
     xSemaphoreGive(can_mutex);
+    esp_log_level_set("gpio", prev_gpio_lvl);
     return 0;
 }
 

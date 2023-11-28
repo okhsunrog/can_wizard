@@ -14,7 +14,7 @@ static const char* LOG_TAG = "can";
 bool is_error_passive = false;
 
 SemaphoreHandle_t can_mutex;
-can_status_t curr_can_state = { 0 };
+volatile can_status_t curr_can_state = { 0 };
 
 static can_status_t get_can_state() {
     can_status_t result;

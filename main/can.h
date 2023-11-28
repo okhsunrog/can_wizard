@@ -51,7 +51,7 @@ static const twai_general_config_t g_config = {
 };
 
 extern SemaphoreHandle_t can_mutex;
-extern can_status_t curr_can_state;
+extern volatile can_status_t curr_can_state;
 
 // functions
 
