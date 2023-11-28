@@ -79,7 +79,7 @@ static int send_can_frame(int argc, char **argv) {
     // free(can_msg_str_buf);
     return 0;
 invalid_args:
-    printf("Invalid arguments!");
+    printf("Invalid arguments!\n");
     free(can_msg_str_buf);
     return 1;
 }
@@ -100,7 +100,7 @@ static const char* can_states_str[] = {
 
 static int canstats(int argc, char **argv) {
     if (curr_can_state.state == CAN_NOT_INSTALLED) {
-        printf("CAN driver is not installed!");
+        printf("CAN driver is not installed!\n");
         return 0;
     } else {
         const char *state_str = can_states_str[curr_can_state.state];
