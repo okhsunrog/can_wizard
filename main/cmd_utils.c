@@ -17,31 +17,30 @@ void register_utils_commands(void) {
 }
 
 static struct {
-    struct arg_str *enable;
+    struct arg_lit *disable;
     struct arg_end *end;
 } timestamp_args;
 
 static int timestamp(int argc, char **argv) {
-    bool en = true;
     int nerrors = arg_parse(argc, argv, (void **) &timestamp_args);
-    if (nerrors == 0) {
-        const char *arg_str_ptr = timestamp_args.enable->sval[0];
-        if (arg_str_ptr[0] == 'd') en = false;
+    if (nerrors != 0) {
+        arg_print_errors(stderr, timestamp_args.end, argv[0]);
+        return 1;
     }
-    if (en) {
-        print_w_clr_time("Enabled timestamps!", LOG_COLOR_PURPLE, true);
-        timestamp_enabled = true;
-    } else {
+    if (timestamp_args.disable->count) {
         print_w_clr_time("Disabled timestamps!", LOG_COLOR_PURPLE, true);
         timestamp_enabled = false;
+    } else {
+        print_w_clr_time("Enabled timestamps!", LOG_COLOR_PURPLE, true);
+        timestamp_enabled = true;
     }
     return 0;
 }
 
 static void register_timestamp(void) {
 
-    timestamp_args.enable = arg_str1(NULL, NULL, "<enable|disable>", "Enable by default, can be abbreviations.");
-    timestamp_args.end = arg_end(2);
+    timestamp_args.disable = arg_litn("d", "disable", 0, 1, "Set to disable timestamps.");
+    timestamp_args.end = arg_end(1);
 
     const esp_console_cmd_t cmd = {
         .command = "timestamp",
