@@ -2,6 +2,7 @@
 #include "can.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "hal/twai_types.h"
 #include "inttypes.h"
 #include "freertos/projdefs.h"
 #include "string.h"
@@ -79,13 +80,13 @@ static int send_can_frame(int argc, char **argv) {
             print_w_clr_time(printf_str, NULL, true);
             break;
         case ESP_ERR_TIMEOUT:
-            print_w_clr_time("Timeout!", LOG_COLOR_RED, false);
+            print_w_clr_time("Timeout!", LOG_COLOR_RED, true);
             break;
         case ESP_ERR_NOT_SUPPORTED:
-            print_w_clr_time("Can't sent in Listen-Only mode!", LOG_COLOR_RED, false);
+            print_w_clr_time("Can't sent in Listen-Only mode!", LOG_COLOR_RED, true);
             break;
         default:
-            print_w_clr_time("Invalid state!", LOG_COLOR_RED, false);
+            print_w_clr_time("Invalid state!", LOG_COLOR_RED, true);
             break;
     }
     free(can_msg_str_buf);
@@ -98,9 +99,9 @@ invalid_args:
 
 static int canrecover(int argc, char **argv) {
     esp_err_t res = twai_initiate_recovery();
-    if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, false);
-    else if (curr_can_state.state == CAN_NOT_INSTALLED) print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, false);
-    else print_w_clr_time("Can't start recovery - not in bus-off state!", LOG_COLOR_RED, false);
+    if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, true);
+    else if (curr_can_state.state == CAN_NOT_INSTALLED) print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
+    else print_w_clr_time("Can't start recovery - not in bus-off state!", LOG_COLOR_RED, true);
     return 0;
 }
 
@@ -129,26 +130,115 @@ static int canstats(int argc, char **argv) {
     return 0;
 }
 
+static const char* can_modes[] = {
+    "normal",
+    "no_ack",
+    "listen_only",
+};
+
 static int canup(int argc, char **argv) {
     esp_err_t res;
+    static twai_timing_config_t t_config;
+    twai_general_config_t gen_cfg = default_g_config;
+    // TODO: add CAN filtering
+    twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
     esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
     int nerrors = arg_parse(argc, argv, (void **) &canup_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, canup_args.end, argv[0]);
         return 1;
     }
-    esp_log_level_set("gpio", ESP_LOG_ERROR);
+    int mode = 0;
+    if (canup_args.mode->count) {
+        const char* mode_str = canup_args.mode->sval[0];
+        while (mode < 4) {
+            if (mode == 3) {
+                print_w_clr_time("Unsupported mode!", LOG_COLOR_RED, true);
+                return 1;
+            }
+            if (memcmp(mode_str, can_modes[mode], strlen(mode_str)) == 0) break;
+            mode++;
+        }
+    }
+    switch(mode) {
+        case 1:
+            gen_cfg.mode = TWAI_MODE_NO_ACK;
+            print_w_clr_time("Starting CAN in No Ack Mode...", LOG_COLOR_BLUE, true);
+            break;
+        case 2:
+            gen_cfg.mode = TWAI_MODE_LISTEN_ONLY;
+            print_w_clr_time("Starting CAN in Listen Only Mode...", LOG_COLOR_BLUE, true);
+            break;
+        default: //0
+            print_w_clr_time("Starting CAN in Normal Mode...", LOG_COLOR_BLUE, true);
+            break;
+    }
+    switch (canup_args.speed->ival[0]) {
+        case 1000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_1KBITS();
+            break;
+        case 5000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_5KBITS();
+            break;
+        case 10000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_10KBITS();
+            break;
+        case 12500:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_12_5KBITS();
+            break;
+        case 16000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_16KBITS();
+            break;
+        case 20000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_20KBITS();
+            break;
+        case 25000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_25KBITS();
+            break;
+        case 50000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_50KBITS();
+            break;
+        case 100000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_100KBITS();
+            break;
+        case 125000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_125KBITS();
+            break;
+        case 250000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_250KBITS();
+            break;
+        case 500000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_500KBITS();
+            break;
+        case 800000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_800KBITS();
+            break;
+        case 1000000:
+            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_1MBITS();
+            break;
+        default:
+            print_w_clr_time("Unsupported speed!", LOG_COLOR_RED, true);
+            return 1;
+    }
     xSemaphoreTake(can_mutex, portMAX_DELAY);
-    // TODO: add CAN filtering
-    static twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
-    res = twai_driver_install(&g_config, &t_config, &f_config);
-    if (res != ESP_OK) {
-        printf("Couldn't install CAN driver! Rebooting...\n");
+    esp_log_level_set("gpio", ESP_LOG_ERROR);
+    res = twai_driver_install(&gen_cfg, &t_config, &f_config);
+    if (res == ESP_OK) {
+        print_w_clr_time("CAN driver installed", LOG_COLOR_BLUE, true);
+        if (canup_args.autorecover->count) {
+            print_w_clr_time("Auto recovery is enabled!", LOG_COLOR_PURPLE, true);
+            auto_recovery = true;
+        } else auto_recovery = false;
+    } else if (res == ESP_ERR_INVALID_STATE) {
+        print_w_clr_time("Driver is already installed!", LOG_COLOR_BROWN, true);
+        goto free_exit;
+    } else {
+        print_w_clr_time("Couldn't install CAN driver! Rebooting...", LOG_COLOR_RED, true);
         esp_restart();
     }
-    printf("CAN driver installed\n");
-    res = twai_start();
-    printf("CAN driver started\n");
+    ESP_ERROR_CHECK(twai_start());
+    print_w_clr_time("CAN driver started", LOG_COLOR_BLUE, true);
+free_exit:
     xSemaphoreGive(can_mutex);
     esp_log_level_set("gpio", prev_gpio_lvl);
     return 0;
@@ -157,8 +247,8 @@ static int canup(int argc, char **argv) {
 static int canstart(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     esp_err_t res = twai_start();
-    if (res == ESP_OK) print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, false);
-    else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, false);
+    if (res == ESP_OK) print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, true);
+    else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, true);
     xSemaphoreGive(can_mutex);
     return 0;
 }
@@ -167,9 +257,9 @@ static int candown(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     if (curr_can_state.state != CAN_BUF_OFF) {
         esp_err_t res = twai_stop();
-        if (res == ESP_OK) print_w_clr_time("CAN was stopped.", LOG_COLOR_GREEN, false);
+        if (res == ESP_OK) print_w_clr_time("CAN was stopped.", LOG_COLOR_GREEN, true);
         else {
-            print_w_clr_time("Driver is not in running state, or is not installed.", LOG_COLOR_RED, false);
+            print_w_clr_time("Driver is not in running state, or is not installed.", LOG_COLOR_RED, true);
             xSemaphoreGive(can_mutex);
             return 1;
         }
