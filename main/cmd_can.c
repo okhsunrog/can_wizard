@@ -1,6 +1,5 @@
 #include "cmd_can.h"
 #include "esp_log.h"
-#include "freertos/portmacro.h"
 #include "inttypes.h"
 #include "freertos/projdefs.h"
 #include "string.h"

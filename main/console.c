@@ -154,7 +154,7 @@ void initialize_console(void) {
     console_config.max_cmdline_length = 256;
     if (use_colors) console_config.hint_color = atoi(LOG_COLOR_CYAN);
     ESP_ERROR_CHECK(esp_console_init(&console_config));
-    linenoiseSetMultiLine(1);
+    // linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(&esp_console_get_completion);
     linenoiseSetHintsCallback((linenoiseHintsCallback*) &esp_console_get_hint);
     linenoiseHistorySetMaxLen(100);

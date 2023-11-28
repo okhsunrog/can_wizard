@@ -73,8 +73,16 @@ void can_task(void* arg) {
     twai_message_t rx_msg;
     char data_bytes_str[50];
     for (;;) { // A Task shall never return or exit.
-        curr_can_state = get_can_state();
         if (twai_read_alerts(&alerts, 0) == ESP_OK) {
+            if (alerts & TWAI_ALERT_ERR_ACTIVE) {
+                is_error_passive = false;
+            }
+            if (alerts & TWAI_ALERT_ERR_PASS) {
+                is_error_passive = true;
+            }
+            if (alerts & TWAI_ALERT_BUS_ERROR) {
+                ESP_LOGE(LOG_TAG, "CAN error!");
+            }
             if (alerts & TWAI_ALERT_BUS_OFF) {
                 ESP_LOGE(LOG_TAG, "CAN went bus-off!");
                 // ESP_ERROR_CHECK(twai_initiate_recovery());
@@ -84,12 +92,14 @@ void can_task(void* arg) {
                 // ESP_ERROR_CHECK(twai_start());
             }
         }
+        curr_can_state = get_can_state();
         if (xSemaphoreTake(can_mutex, 0) == pdTRUE) {
-            if (twai_receive(&rx_msg, can_task_timeout) == ESP_OK) {
+            while (twai_receive(&rx_msg, 0) == ESP_OK) {
                 can_msg_to_str(&rx_msg, data_bytes_str); 
                 xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
             }
             xSemaphoreGive(can_mutex);
-        } else vTaskDelay(can_task_timeout);
+        }
+        vTaskDelay(can_task_timeout);
     }
 }
