@@ -1,7 +1,6 @@
 #include "can.h"
 #include "esp_log.h"
 #include "freertos/projdefs.h"
-#include "hal/twai_types.h"
 #include "sdkconfig.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -51,47 +50,6 @@ static can_status_t get_can_state() {
     return result;
 }
 
-void can_init() {
-    // Install CAN driver
-    // calculate_hw_can_filter(CONFIG_DEVICE_ID, &f_config, false);
-    static twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
-    ESP_ERROR_CHECK(twai_driver_install(&g_config, &t_config, &f_config));
-    ESP_LOGI(LOG_TAG, "CAN driver installed");
-    // Start CAN driver
-    ESP_ERROR_CHECK(twai_start());
-    ESP_LOGI(LOG_TAG, "CAN driver started");
-}
-
-void can_stop() {
-    // stop and uninstall twai driver to change hardware filters
-    ESP_ERROR_CHECK(twai_stop());
-    ESP_ERROR_CHECK(twai_driver_uninstall());
-}
-
-// filtering subset of CAN IDs with hardware filters, need more filtering in software
-void calculate_hw_can_filter(uint32_t device_id, twai_filter_config_t* filter, bool ota_mode) {
-    filter->single_filter = true;
-    filter->acceptance_code = device_id << 11;
-    if (ota_mode) {
-        filter->acceptance_code += 0x100000 << 11;
-        filter->acceptance_mask = ~((0x1000FF) << 11);
-    } else {
-        filter->acceptance_mask = ~((device_id | 0x1F0000) << 11);
-    }
-}
-
-void can_bus_off_check() {
-    uint32_t alerts = 0;
-    if (twai_read_alerts(&alerts, 0) == ESP_OK) {
-        if (alerts & TWAI_ALERT_BUS_OFF) {
-            ESP_ERROR_CHECK(twai_initiate_recovery());
-        }
-        if (alerts & TWAI_ALERT_BUS_RECOVERED) {
-            ESP_ERROR_CHECK(twai_start());
-        }
-    }
-}
-
 void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
     char byte_str[3];
     out_str[0] = '\0';
@@ -109,20 +67,29 @@ void can_msg_to_str(twai_message_t *can_msg, char *out_str) {
 
 // TODO: add software filtering
 void can_task(void* arg) {
+    static const TickType_t can_task_timeout = pdMS_TO_TICKS(100);
+    uint32_t alerts = 0;
     can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
     char data_bytes_str[50];
-    // ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
     for (;;) { // A Task shall never return or exit.
-        // esp_task_wdt_reset();
-        // can_bus_off_check();
         curr_can_state = get_can_state();
-        xSemaphoreTake(can_mutex, pdMS_TO_TICKS(200));
-        while(twai_receive(&rx_msg, 0) == ESP_OK) {
-            can_msg_to_str(&rx_msg, data_bytes_str); 
-            xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
+        if (twai_read_alerts(&alerts, 0) == ESP_OK) {
+            if (alerts & TWAI_ALERT_BUS_OFF) {
+                ESP_LOGE(LOG_TAG, "CAN went bus-off!");
+                // ESP_ERROR_CHECK(twai_initiate_recovery());
+            }
+            if (alerts & TWAI_ALERT_BUS_RECOVERED) {
+                ESP_LOGI(LOG_TAG, "CAN recovered!");
+                // ESP_ERROR_CHECK(twai_start());
+            }
         }
-        xSemaphoreGive(can_mutex);
-        vTaskDelay(pdMS_TO_TICKS(100));
+        if (xSemaphoreTake(can_mutex, 0) == pdTRUE) {
+            if (twai_receive(&rx_msg, can_task_timeout) == ESP_OK) {
+                can_msg_to_str(&rx_msg, data_bytes_str); 
+                xprintf(LOG_COLOR(LOG_COLOR_BLUE) "recv %s\n" LOG_RESET_COLOR, data_bytes_str);
+            }
+            xSemaphoreGive(can_mutex);
+        } else vTaskDelay(can_task_timeout);
     }
 }

@@ -2,14 +2,11 @@
 #include "esp_log.h"
 #include "freertos/portmacro.h"
 #include "inttypes.h"
-#include "driver/twai.h"
 #include "freertos/projdefs.h"
-#include "hal/twai_types.h"
 #include "string.h"
 #include "esp_console.h"
 #include "argtable3/argtable3.h"
 #include "xvprintf.h"
-#include "can.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <ctype.h>
