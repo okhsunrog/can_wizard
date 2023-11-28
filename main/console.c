@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_system.h"
+#include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
 #include "linenoise/linenoise.h"
 #include "freertos/FreeRTOS.h"
@@ -17,6 +18,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "cmd_system.h"
 #include "cmd_can.h"
+#include "can.h"
 #include "fs.h"
 #include "xvprintf.h"
 
@@ -27,49 +29,81 @@ static const bool use_colors = true;
 #endif
 
 static const char* TAG = "console task";
+char prompt_buf[40];
 esp_console_config_t console_config;
 struct linenoiseState ls;
 
-char prompt[40];
+SemaphoreHandle_t console_taken_sem;
 
-static void get_prompt(char* prompt_buf) {
-    static const char* text = "can_wizard > ";
-    static const char* prompt_color = LOG_COLOR_E;
-    // memset(prompt_buf,0,strlen(prompt_buf));
+static void update_prompt() {
+    static char* text;
+    static char* prompt_color;
+    switch (curr_can_state.state) {
+        case CAN_NOT_INSTALLED:
+            text = "not installed";
+            prompt_color = LOG_COLOR(LOG_COLOR_RED);
+            break;
+        case CAN_STOPPED:
+            text = "stopped";
+            prompt_color = LOG_COLOR(LOG_COLOR_RED);
+            break;
+        case CAN_ERROR_ACTIVE:
+            text = "error active";
+            prompt_color = LOG_COLOR(LOG_COLOR_GREEN);
+            break;
+        case CAN_ERROR_PASSIVE:
+            text = "error passive";
+            prompt_color = LOG_COLOR(LOG_COLOR_BROWN);
+            break;
+        case CAN_BUF_OFF:
+            text = "bus off";
+            prompt_color = LOG_COLOR(LOG_COLOR_RED);
+            break;
+        case CAN_RECOVERING:
+            text = "recovering";
+            prompt_color = LOG_COLOR(LOG_COLOR_RED);
+            break;
+    }
     prompt_buf[0] = '\0';
     if (use_colors) {
         strcat(prompt_buf, prompt_color);
         strcat(prompt_buf, text);
+        strcat(prompt_buf, " > ");
         strcat(prompt_buf, LOG_RESET_COLOR);
     } else {
         strcat(prompt_buf, text);
     }
+    ls.prompt = prompt_buf;
 }
 
 void console_task_tx(void* arg) {
+    static const TickType_t prompt_timeout = pdMS_TO_TICKS(200);
+    // static const TickType_t prompt_timeout = portMAX_DELAY;
     const int fd = fileno(stdout);
     char *msg_to_print;
     size_t msg_to_print_size;
     while(1) {
-        msg_to_print = (char *)xRingbufferReceive(can_messages, &msg_to_print_size, portMAX_DELAY);
+        msg_to_print = (char *)xRingbufferReceive(can_messages, &msg_to_print_size, prompt_timeout);
+        // update_prompt();
+        xSemaphoreTake(console_taken_sem, portMAX_DELAY);
+        xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
+        linenoiseHide(&ls);
         if (msg_to_print != NULL) {
-            xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
-            linenoiseHide(&ls);
             // if zero-length string - just refresh prompt. used for updating prompt
             if(msg_to_print[0] != '\0') {
                 write(fd, msg_to_print, msg_to_print_size);
                 flushWrite();
-            } else {
-                ls.prompt = "new prompt > ";
             }
-            linenoiseShow(&ls);
-            xSemaphoreGive(stdout_taken_sem);
             vRingbufferReturnItem(can_messages, (void *) msg_to_print);
         }
+        linenoiseShow(&ls);
+        xSemaphoreGive(stdout_taken_sem);
+        xSemaphoreGive(console_taken_sem); 
     }
 }
 
 void console_task_interactive(void* arg) {
+    console_taken_sem = xSemaphoreCreateMutex();
     stdout_taken_sem = xSemaphoreCreateMutex();
     char *buf = calloc(1, console_config.max_cmdline_length);
     char *line;
@@ -90,23 +124,24 @@ void console_task_interactive(void* arg) {
        "Use UP/DOWN arrows to navigate through command history.\n"
        "Press TAB when typing command name to auto-complete.\n"
        "Ctrl+C will terminate the console environment.\n");
-    get_prompt(prompt);
     ls.buflen = console_config.max_cmdline_length;
     ls.buf = buf;
-    ls.prompt = prompt;
+    update_prompt();
     linenoiseEditStart(&ls);
     xTaskCreate(console_task_tx, "console tsk tx", 5000, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
     esp_log_set_vprintf(&vxprintf);
     while (true) {
         line = linenoiseEditFeed(&ls);
         if (line == linenoiseEditMore) continue;
+        xSemaphoreTake(console_taken_sem, portMAX_DELAY);
         linenoiseEditStop(&ls);
         if (line == NULL) { /* Break on EOF or error */
             ESP_LOGE(TAG, "Ctrl+C???");
             break;
         }
+
         /* Add the command to the history if not empty*/
-        if (strlen(line) > 0) {
+        if ((strlen(line) > 0) && (line[0] != '^')) {
             linenoiseHistoryAdd(line);
             /* Save command history to filesystem */
             linenoiseHistorySave(HISTORY_PATH);
@@ -126,6 +161,7 @@ void console_task_interactive(void* arg) {
         /* linenoise allocates line buffer on the heap, so need to free it */
         linenoiseFree(line);
         linenoiseEditStart(&ls);
+        xSemaphoreGive(console_taken_sem);
     }
 
     ESP_LOGE(TAG, "Restarting...");
