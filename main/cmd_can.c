@@ -96,7 +96,6 @@ invalid_args:
     return 1;
 }
 
-
 static int canrecover(int argc, char **argv) {
     esp_err_t res = twai_initiate_recovery();
     if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, false);
@@ -153,10 +152,10 @@ static int canup(int argc, char **argv) {
 }
 
 static int canstart(int argc, char **argv) {
-    // Start CAN driver
     xSemaphoreTake(can_mutex, portMAX_DELAY);
-    ESP_ERROR_CHECK(twai_start());
-    printf("CAN driver started\n");
+    esp_err_t res = twai_start();
+    if (res == ESP_OK) print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, false);
+    else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, false);
     xSemaphoreGive(can_mutex);
     return 0;
 }
