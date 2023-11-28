@@ -1,5 +1,6 @@
 #include "can.h"
 #include "esp_log.h"
+#include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
 #include "sdkconfig.h"
 #include <stddef.h>
@@ -65,8 +66,10 @@ void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
 
 // TODO: add software filtering
 void can_task(void* arg) {
-    static const TickType_t can_task_timeout = pdMS_TO_TICKS(10);
+    static const TickType_t can_task_timeout = pdMS_TO_TICKS(100);
     uint32_t alerts = 0;
+    esp_err_t ret = ESP_OK;
+    BaseType_t sem_res;
     can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
     char data_bytes_str[70];
@@ -91,13 +94,16 @@ void can_task(void* arg) {
             }
         }
         curr_can_state = get_can_state();
-        if (xSemaphoreTake(can_mutex, 0) == pdTRUE) {
-            while (twai_receive(&rx_msg, 0) == ESP_OK) {
+        sem_res = xSemaphoreTake(can_mutex, 0);
+        if (sem_res == pdTRUE) {
+            while ((ret = twai_receive(&rx_msg, can_task_timeout)) == ESP_OK) {
                 can_msg_to_str(&rx_msg, "recv ", data_bytes_str); 
                 print_w_clr_time(data_bytes_str, LOG_COLOR_BLUE, false);
             }
             xSemaphoreGive(can_mutex);
         }
-        vTaskDelay(can_task_timeout);
+        if (sem_res != pdTRUE || ret == ESP_ERR_INVALID_STATE || ret == ESP_ERR_NOT_SUPPORTED) {
+            vTaskDelay(can_task_timeout);
+        }
     }
 }
