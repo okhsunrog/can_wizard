@@ -29,14 +29,14 @@ static const bool use_colors = true;
 #endif
 
 static const char* TAG = "console task";
-char prompt_buf[40];
+char prompt_buf[60];
 esp_console_config_t console_config;
 struct linenoiseState ls;
 
 SemaphoreHandle_t console_taken_sem;
 
 static void update_prompt() {
-    char text[30];
+    char text[45];
     int text_len;
     static char* prompt_color;
     text[0] = '\0';
@@ -65,6 +65,11 @@ static void update_prompt() {
             strcat(text, "recovering");
             prompt_color = LOG_COLOR(LOG_COLOR_RED);
             break;
+    }
+    if (curr_can_state.state != CAN_NOT_INSTALLED) {
+        char tec_rec[25];
+        snprintf(tec_rec, 24, " [TEC: %" PRIu32 "][REC: %" PRIu32 "]", curr_can_state.tx_error_counter, curr_can_state.rx_error_counter);
+        strcat(text, tec_rec);
     }
     strcat(text, " > ");
     prompt_buf[0] = '\0';
