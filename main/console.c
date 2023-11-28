@@ -36,44 +36,48 @@ struct linenoiseState ls;
 SemaphoreHandle_t console_taken_sem;
 
 static void update_prompt() {
-    static char* text;
+    char text[30];
+    int text_len;
     static char* prompt_color;
+    text[0] = '\0';
     switch (curr_can_state.state) {
         case CAN_NOT_INSTALLED:
-            text = "not installed";
+            strcat(text, "not installed");
             prompt_color = LOG_COLOR(LOG_COLOR_RED);
             break;
         case CAN_STOPPED:
-            text = "stopped";
+            strcat(text, "stopped");
             prompt_color = LOG_COLOR(LOG_COLOR_RED);
             break;
         case CAN_ERROR_ACTIVE:
-            text = "error active";
+            strcat(text, "error active");
             prompt_color = LOG_COLOR(LOG_COLOR_GREEN);
             break;
         case CAN_ERROR_PASSIVE:
-            text = "error passive";
+            strcat(text, "error passive");
             prompt_color = LOG_COLOR(LOG_COLOR_BROWN);
             break;
         case CAN_BUF_OFF:
-            text = "bus off";
+            strcat(text, "bus off");
             prompt_color = LOG_COLOR(LOG_COLOR_RED);
             break;
         case CAN_RECOVERING:
-            text = "recovering";
+            strcat(text, "recovering");
             prompt_color = LOG_COLOR(LOG_COLOR_RED);
             break;
     }
+    strcat(text, " > ");
     prompt_buf[0] = '\0';
     if (use_colors) {
         strcat(prompt_buf, prompt_color);
         strcat(prompt_buf, text);
-        strcat(prompt_buf, " > ");
         strcat(prompt_buf, LOG_RESET_COLOR);
     } else {
         strcat(prompt_buf, text);
     }
+    text_len = strlen(text);
     ls.prompt = prompt_buf;
+    ls.plen = text_len;
 }
 
 void console_task_tx(void* arg) {
@@ -84,7 +88,7 @@ void console_task_tx(void* arg) {
     size_t msg_to_print_size;
     while(1) {
         msg_to_print = (char *)xRingbufferReceive(can_messages, &msg_to_print_size, prompt_timeout);
-        // update_prompt();
+        update_prompt();
         xSemaphoreTake(console_taken_sem, portMAX_DELAY);
         xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
         linenoiseHide(&ls);

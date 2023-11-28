@@ -928,7 +928,7 @@ int linenoiseEditStart(struct linenoiseState *l) {
     /* Populate the linenoise state that we pass to functions implementing
      * specific editing functionalities. */
     l->in_completion = 0;
-    l->plen = strlen(l->prompt);
+    // l->plen = strlen(l->prompt);
     l->oldpos = l->pos = 0;
     l->len = 0;
     l->cols = getColumns();
@@ -944,16 +944,16 @@ int linenoiseEditStart(struct linenoiseState *l) {
     xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
     if (!dumbmode) {
         linenoiseHistoryAdd("");
-        int pos1 = getCursorPosition();
+        // int pos1 = getCursorPosition();
         if (fwrite(l->prompt,l->plen,1,stdout) == -1) {
             xSemaphoreGive(stdout_taken_sem);
             return -1;
         }
         flushWrite();
-        int pos2 = getCursorPosition();
-        if (pos1 >= 0 && pos2 >= 0) {
-            l->plen = pos2 - pos1;
-        }
+        // int pos2 = getCursorPosition();
+        // if (pos1 >= 0 && pos2 >= 0) {
+        //     l->plen = pos2 - pos1;
+        // }
     } else {
         if (fwrite(l->prompt,l->plen,1,stdout) == -1) {
             xSemaphoreGive(stdout_taken_sem);
