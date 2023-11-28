@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <ctype.h>
 
+twai_filter_config_t my_filters = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
 static void register_cansend(void);
 static void register_canup(void);
 static void register_candown(void);
@@ -33,14 +35,6 @@ static struct {
     struct arg_str *message;
     struct arg_end *end;
 } cansend_args;
-
-static struct {
-    struct arg_int *speed;
-    struct arg_str *filters;
-    struct arg_lit *autorecover;
-    struct arg_str *mode;
-    struct arg_end *end;
-} canup_args;
 
 static int send_can_frame(int argc, char **argv) {
     twai_message_t msg = {.extd = 1};
@@ -136,12 +130,27 @@ static const char* can_modes[] = {
     "listen_only",
 };
 
+static struct {
+    struct arg_int *speed;
+    struct arg_lit *filters;
+    struct arg_lit *autorecover;
+    struct arg_str *mode;
+    struct arg_end *end;
+} canup_args;
+
 static int canup(int argc, char **argv) {
     esp_err_t res;
     static twai_timing_config_t t_config;
     twai_general_config_t gen_cfg = default_g_config;
     // TODO: add CAN filtering
-    twai_filter_config_t f_config = {.acceptance_code = 0, .acceptance_mask = 0xFFFFFFFF, .single_filter = true};
+    twai_filter_config_t f_config;
+    if (canup_args.filters->count) {
+        f_config = my_filters;
+        print_w_clr_time("Using predefined filters.", LOG_COLOR_GREEN, true);
+    } else {
+        f_config = (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
+        print_w_clr_time("Using accept all filters.", LOG_COLOR_GREEN, true);
+    }
     esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
     int nerrors = arg_parse(argc, argv, (void **) &canup_args);
     if (nerrors != 0) {
@@ -291,7 +300,7 @@ static void register_canup(void) {
 
     canup_args.speed = arg_int1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See help for supported speeds.");
     canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only>", "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
-    canup_args.filters = arg_str0("f", "filters", "<filters>", "CAN filters to receive only selected frames.");
+    canup_args.filters = arg_lit0("f", NULL, "Use predefined CAN filters.");
     canup_args.autorecover = arg_lit0("r", "auto-recovery", "Set to enable auto-recovery of CAN bus if case of bus-off event");
     canup_args.end = arg_end(4);
 
