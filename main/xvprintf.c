@@ -5,7 +5,7 @@
 #include "esp_log.h"
 
 RingbufHandle_t can_messages;
-bool timestamp_enabled = true;
+bool timestamp_enabled = false;
 
 void init_tx_ringbuf() {
     can_messages = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
