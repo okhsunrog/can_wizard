@@ -1,5 +1,6 @@
 #include "cmd_can.h"
 #include "can.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "inttypes.h"
 #include "freertos/projdefs.h"
@@ -162,7 +163,15 @@ static int canstart(int argc, char **argv) {
 
 static int candown(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
-    ESP_ERROR_CHECK(twai_stop());
+    if (curr_can_state.state != CAN_BUF_OFF) {
+        esp_err_t res = twai_stop();
+        if (res == ESP_OK) print_w_clr_time("CAN was stopped.", LOG_COLOR_GREEN, false);
+        else {
+            print_w_clr_time("Driver is not in running state, or is not installed.", LOG_COLOR_RED, false);
+            xSemaphoreGive(can_mutex);
+            return 1;
+        }
+    }
     ESP_ERROR_CHECK(twai_driver_uninstall());
     xSemaphoreGive(can_mutex);
     return 0;
@@ -184,14 +193,14 @@ static void register_send_can_frame(void) {
 }
 
 static void register_canup(void) {
-    canup_args.speed = arg_str1(NULL, NULL, "<25|50|100|125|250|500|800|1000>", "CAN bus speed, in kbits.");
-    canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only", "Set CAN mode. Normal, No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
+    canup_args.speed = arg_str1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See helo for supported speeds.");
+    canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only", "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
     canup_args.filters = arg_str0("f", "filters", "<filters>", "CAN filters to receive only selected frames.");
-    canup_args.autorecover = arg_str0("r", "auto-recovery", "<1|0>", "Set 1 to enable auto-recovery of CAN bus if case of bus-off event.");
+    canup_args.autorecover = arg_str0("r", "auto-recovery", "<1|0>", "Set 1 to enable auto-recovery of CAN bus if case of bus-off event, disabled by default.");
     canup_args.end = arg_end(2);
     const esp_console_cmd_t cmd = {
         .command = "canup",
-        .help = "Install can drivers and start can interface. Used right after board start or during runtime for changing CAN configuration.",
+        .help = "Install can drivers and start can interface. Used right after board start or during runtime for changing CAN configuration. Supported speeds: 1mbits, 800kbits, 500kbits, 250kbits, 125kbits, 100kbits, 50kbits, 25kbits, 20kbits, 16kbits, 12.5kbits, 10kbits, 5kbits, 1kbits.",
         .hint = NULL,
         .func = &canup,
         .argtable = &canup_args,
@@ -222,7 +231,7 @@ static void register_canstats(void) {
 static void register_canstart(void) {
     const esp_console_cmd_t cmd = {
         .command = "canstart",
-        .help = "Start CAN interface, used after buf recovery, otherwise see canup command.",
+        .help = "Start CAN interface, used after bus recovery, otherwise see canup command.",
         .hint = NULL,
         .func = &canstart,
     };
