@@ -408,6 +408,8 @@ static void register_canfilter(void) {
     canfilter_args.mask_arg = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
     canfilter_args.code_arg = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
     canfilter_args.dual_arg = arg_lit0("d", NULL, "Use Dual Filter Mode.");
+    canfilter_args.end = arg_end(4);
+
 
     const esp_console_cmd_t cmd = {
         .command = "canfilter",
@@ -496,6 +498,8 @@ invalid_args:
 static void register_cansmartfilter(void) {
 
     cansmart_args.filters = arg_strn(NULL, NULL, "<filter1> <filter2> ...", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, in hex format. Each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
+    cansmart_args.end = arg_end(2);
+
     const esp_console_cmd_t cmd = {
         .command = "cansmartfilter",
         .help = "Setup smart mixed filters (hardware + software). Num of filters can be up to the value in config. Supportd only ID filtering of extended frames, standart frames aren't supported for now.",
