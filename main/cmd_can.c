@@ -497,7 +497,7 @@ invalid_args:
 
 static void register_cansmartfilter(void) {
 
-    cansmart_args.filters = arg_strn(NULL, NULL, "<filter1> <filter2> ...", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, in hex format. Each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
+    cansmart_args.filters = arg_strn(NULL, NULL, "<code#mask>", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
     cansmart_args.end = arg_end(2);
 
     const esp_console_cmd_t cmd = {
