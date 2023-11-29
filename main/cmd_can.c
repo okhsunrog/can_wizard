@@ -160,6 +160,8 @@ static int canup(int argc, char **argv) {
         f_config = my_filters;
         printf("Using %s filters.\n", adv_filters.enabled ? "smart" : "basic hw");
     } else {
+        adv_filters.enabled = false;
+        adv_filters.sw_filtering = false;
         f_config = (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
         printf("Using accept all filters.\n");
     }
