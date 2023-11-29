@@ -1,18 +1,5 @@
-#ifndef LIST_DEF
-#define LIST_DEF 1
-
-/*
- File:          list.c
- Description:   Implementation of linked list object functionality.
- Created:       March 21, 2017
- Author:        Matt Mumau
- */
-
-// System dependencies
-#include <stdlib.h>
-
-// Header
 #include "list.h"
+#include <stdlib.h>
 
 void list_push(List** head, void* data) {
     List* node = malloc(sizeof(List));
@@ -108,4 +95,10 @@ void list_remove(List** head, unsigned int index) {
     }
 }
 
-#endif
+void list_destroy(List** head) {
+    while (*head != NULL) {
+        List* tmp_cursor = *head;
+        *head = (*head)->next;
+        free(tmp_cursor);
+    }
+}

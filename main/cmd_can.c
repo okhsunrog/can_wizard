@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "hal/twai_types.h"
 #include "inttypes.h"
+#include "list.h"
 #include "sdkconfig.h"
 #include "freertos/projdefs.h"
 #include "string.h"
@@ -429,6 +430,13 @@ static int cansmartfilter(int argc, char **argv) {
         arg_print_errors(stderr, cansmart_args.end, argv[0]);
         return 1;
     }
+    list_destroy(&adv_filters.filters);
+    for (int i = 0; i < cansmart_args.filters->count; i++) {
+
+    }
+
+
+
     return 0;
 }
 
