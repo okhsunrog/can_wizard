@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
+#include "hal/twai_types.h"
 #include "sdkconfig.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 
 bool is_error_passive = false;
 bool auto_recovery = false;
+bool advanced_filtering = false;
 
 SemaphoreHandle_t can_mutex;
 volatile can_status_t curr_can_state = { 0 };
@@ -66,6 +68,10 @@ void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
     }
 }
 
+bool matches_filters(twai_message_t *msg) {
+    return true;
+}
+
 // TODO: add software filtering
 void can_task(void* arg) {
     static const TickType_t can_task_timeout = pdMS_TO_TICKS(200);
@@ -106,6 +112,9 @@ void can_task(void* arg) {
         sem_res = xSemaphoreTake(can_mutex, 0);
         if (sem_res == pdTRUE) {
             while ((ret = twai_receive(&rx_msg, can_task_timeout)) == ESP_OK) {
+                if (advanced_filtering) {
+                    if (!matches_filters(&rx_msg)) continue;
+                }
                 can_msg_to_str(&rx_msg, "recv ", data_bytes_str); 
                 print_w_clr_time(data_bytes_str, LOG_COLOR_BLUE, false);
             }

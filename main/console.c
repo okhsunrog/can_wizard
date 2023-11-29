@@ -1,4 +1,5 @@
 #include "console.h"
+#include "sdkconfig.h"
 #include <fcntl.h>
 #include "esp_err.h"
 #include "esp_log.h"
@@ -197,8 +198,8 @@ void initialize_console(void) {
     ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_serial_jtag_config));
     /* Tell vfs to use usb-serial-jtag driver */
     esp_vfs_usb_serial_jtag_use_driver();
-    console_config.max_cmdline_args = 8;
-    console_config.max_cmdline_length = 256;
+    console_config.max_cmdline_args = CONFIG_CONSOLE_MAX_CMDLINE_ARGS;
+    console_config.max_cmdline_length = CONFIG_CONSOLE_MAX_CMDLINE_LENGTH;
     if (use_colors) console_config.hint_color = atoi(LOG_COLOR_CYAN);
     ESP_ERROR_CHECK(esp_console_init(&console_config));
     // linenoiseSetMultiLine(1);

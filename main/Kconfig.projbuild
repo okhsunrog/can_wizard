@@ -39,6 +39,19 @@ menu "Can_wizard Configuration"
         help
             A priority of FreeRTOS task can_task_interactive. See more about tasks priorities in FreeRTOS documentation.
 
+    config CONSOLE_MAX_CMDLINE_LENGTH
+        int "Console max cmdline length"
+        range 100 512
+        default 256
 
+    config CONSOLE_MAX_CMDLINE_ARGS 
+        int "Console max cmdline args"
+        range 1 32
+        default 8
+
+    config CAN_MAX_SMARTFILTERS_NUM
+        int "Max number of smartfilters"
+        range 2 20
+        default 10
 
 endmenu

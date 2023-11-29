@@ -42,6 +42,7 @@ extern volatile can_status_t curr_can_state;
 extern bool timestamp_enabled;
 extern bool auto_recovery;
 extern bool is_error_passive;
+extern bool advanced_filtering;
 
 // functions
 

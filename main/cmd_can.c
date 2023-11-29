@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "hal/twai_types.h"
 #include "inttypes.h"
+#include "sdkconfig.h"
 #include "freertos/projdefs.h"
 #include "string.h"
 #include "esp_console.h"
@@ -21,6 +22,8 @@ static void register_candown(void);
 static void register_canstats(void);
 static void register_canstart(void);
 static void register_canrecover(void);
+static void register_canfilter(void);
+static void register_cansmartfilter(void);
 
 void register_can_commands(void) {
     register_cansend();
@@ -29,6 +32,8 @@ void register_can_commands(void) {
     register_canstats();
     register_canstart();
     register_canrecover();
+    register_canfilter();
+    register_cansmartfilter();
 }
 
 static struct {
@@ -144,6 +149,11 @@ static int canup(int argc, char **argv) {
     twai_general_config_t gen_cfg = default_g_config;
     // TODO: add CAN filtering
     twai_filter_config_t f_config;
+    int nerrors = arg_parse(argc, argv, (void **) &canup_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, canup_args.end, argv[0]);
+        return 1;
+    }
     if (canup_args.filters->count) {
         f_config = my_filters;
         print_w_clr_time("Using predefined filters.", LOG_COLOR_GREEN, true);
@@ -152,11 +162,6 @@ static int canup(int argc, char **argv) {
         print_w_clr_time("Using accept all filters.", LOG_COLOR_GREEN, true);
     }
     esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
-    int nerrors = arg_parse(argc, argv, (void **) &canup_args);
-    if (nerrors != 0) {
-        arg_print_errors(stderr, canup_args.end, argv[0]);
-        return 1;
-    }
     int mode = 0;
     if (canup_args.mode->count) {
         const char* mode_str = canup_args.mode->sval[0];
@@ -350,6 +355,71 @@ static void register_canrecover(void) {
         .help = "Recover CAN after buf-off. Used when auto-recovery is turned off.",
         .hint = NULL,
         .func = &canrecover,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+}
+
+static struct {
+    struct arg_lit *dual;
+    struct arg_str *code;
+    struct arg_str *mask;
+    struct arg_end *end;
+} canfilter_args;
+
+static int canfilter(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **) &canfilter_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, canfilter_args.end, argv[0]);
+        return 1;
+    }
+    if (canfilter_args.dual->count) {
+        my_filters.single_filter = false;
+
+    } else {
+        my_filters.single_filter = true;
+    }
+    return 0;
+}
+
+static void register_canfilter(void) {
+
+    canfilter_args.mask = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
+    canfilter_args.code = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
+    canfilter_args.dual = arg_lit0("d", NULL, "Use Dual Filter Mode.");
+
+    const esp_console_cmd_t cmd = {
+        .command = "canfilter",
+        .help = "Manually setup basic hardware filtering.",
+        .hint = NULL,
+        .func = &canfilter,
+        .argtable = &canfilter_args,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+}
+
+static struct {
+    struct arg_str *filters;
+    struct arg_end *end;
+} cansmart_args;
+
+static int cansmartfilter(int argc, char **argv) {
+    int nerrors = arg_parse(argc, argv, (void **) &cansmart_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, cansmart_args.end, argv[0]);
+        return 1;
+    }
+    return 0;
+}
+
+static void register_cansmartfilter(void) {
+
+    cansmart_args.filters = arg_strn(NULL, NULL, "<filter1> <filter2> ...", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, in hex format. Each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
+    const esp_console_cmd_t cmd = {
+        .command = "cansmartfilter",
+        .help = "Setup smart mixed filters (hardware + software). Num of filters can be up to the value in config.",
+        .hint = NULL,
+        .func = &cansmartfilter,
+        .argtable = &cansmart_args,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
