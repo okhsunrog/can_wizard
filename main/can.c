@@ -85,7 +85,6 @@ bool matches_filters(twai_message_t *msg) {
     return false;
 }
 
-// TODO: add software filtering
 void can_task(void* arg) {
     static const TickType_t can_task_timeout = pdMS_TO_TICKS(200);
     uint32_t alerts = 0;

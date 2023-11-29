@@ -8,14 +8,6 @@
 #include <stdint.h>
 #include <list.h>
 
-typedef struct {
-  char status[30];
-  int tec;
-  int rec;
-  int color;
-  bool extd;
-} can_prompt_t;
-
 typedef enum {
   CAN_NOT_INSTALLED = 0,
   CAN_STOPPED = 1,

@@ -149,7 +149,6 @@ static int canup(int argc, char **argv) {
     esp_err_t res;
     static twai_timing_config_t t_config;
     twai_general_config_t gen_cfg = default_g_config;
-    // TODO: add CAN filtering
     twai_filter_config_t f_config;
     int nerrors = arg_parse(argc, argv, (void **) &canup_args);
     if (nerrors != 0) {
