@@ -73,7 +73,16 @@ void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
 }
 
 bool matches_filters(twai_message_t *msg) {
-    return true;
+    List *tmp_cursor = adv_filters.filters;
+    while (tmp_cursor != NULL) {
+        smart_filt_element_t *curr_filter;
+        curr_filter = (smart_filt_element_t *) tmp_cursor->data;
+        if ((msg->identifier & curr_filter->mask) == curr_filter->filt) {
+            return true;
+        }
+        tmp_cursor = tmp_cursor->next;
+    }
+    return false;
 }
 
 // TODO: add software filtering
