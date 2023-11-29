@@ -95,10 +95,3 @@ void list_remove(List** head, unsigned int index) {
     }
 }
 
-void list_destroy(List** head) {
-    while (*head != NULL) {
-        List* tmp_cursor = *head;
-        *head = (*head)->next;
-        free(tmp_cursor);
-    }
-}

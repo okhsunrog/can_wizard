@@ -24,7 +24,4 @@ List* list_get(List* head, unsigned int index);
 // Delete the item in the list at the given ordinal location (1 is the first).
 void list_remove(List** head, unsigned int index);
 
-// Remove all element of the list and set the given ptr to NULL
-void list_destroy(List** head);
-
 #endif

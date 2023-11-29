@@ -424,20 +424,73 @@ static struct {
     struct arg_end *end;
 } cansmart_args;
 
+
+void smartfilters_destroy(List** head) {
+    while (*head != NULL) {
+        List* tmp_cursor = *head;
+        *head = (*head)->next;
+        free((smart_filt_element_t *) tmp_cursor->data);
+        free(tmp_cursor);
+    }
+}
+
 static int cansmartfilter(int argc, char **argv) {
+    char *filter_str_buf = NULL;
+    smart_filt_element_t *filt_element = NULL;
     int nerrors = arg_parse(argc, argv, (void **) &cansmart_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansmart_args.end, argv[0]);
         return 1;
     }
-    list_destroy(&adv_filters.filters);
+    smartfilters_destroy(&adv_filters.filters);
+    adv_filters.sw_filtering = false;
+    adv_filters.enabled = false;
+    bool tmp_sw = false;
+    uint32_t hwfilt_code = 0;
+    uint32_t hwfilt_mask = 0;
     for (int i = 0; i < cansmart_args.filters->count; i++) {
-
+        filt_element = malloc(sizeof(smart_filt_element_t));
+        const char *filter_str_ptr = cansmart_args.filters->sval[i];
+        filter_str_buf = strdup(filter_str_ptr);
+        char *code_substr = strtok(filter_str_buf, "#");
+        char *mask_substr = strtok(NULL, "#");
+        if (code_substr == NULL || mask_substr == NULL || strtok(NULL, "#") != NULL) goto invalid_args;
+        int m_l = strlen(mask_substr);
+        int c_l = strlen(code_substr);
+        if (m_l > 8 || c_l > 8) goto invalid_args;
+        for (int i = 0; i < m_l; i++) if (!isxdigit((int) mask_substr[i])) goto invalid_args;
+        for (int i = 0; i < c_l; i++) if (!isxdigit((int) code_substr[i])) goto invalid_args;
+        if (sscanf(code_substr, "%" PRIX32, &filt_element->filt) < 1) goto invalid_args;
+        if (sscanf(mask_substr, "%" PRIX32, &filt_element->mask) < 1) goto invalid_args;
+        list_push(&adv_filters.filters, (void *) filt_element);
+        if (i == 0) {
+            hwfilt_mask = filt_element->mask;
+            hwfilt_code = filt_element->filt;
+        } else {
+            uint32_t common_bits = filt_element->mask & hwfilt_mask;
+            uint32_t new_bits = filt_element->mask - common_bits;
+            uint32_t missing_bits = hwfilt_mask - common_bits;
+            hwfilt_mask &= filt_element->mask;
+            uint32_t bit_to_delete = (hwfilt_code ^ filt_element->filt) & hwfilt_mask;
+            hwfilt_mask -= bit_to_delete;
+            if (new_bits || missing_bits || bit_to_delete) tmp_sw = true;
+        }
+        filt_element = NULL;
     }
-
-
-
+    my_filters.single_filter = true;
+    my_filters.acceptance_mask = ~(hwfilt_mask << 3);
+    my_filters.acceptance_code = hwfilt_code << 3;
+    adv_filters.sw_filtering = tmp_sw;
+    adv_filters.enabled = true;
+    print_w_clr_time("Smart filters were set.", LOG_COLOR_GREEN, true);
+    printf("Num of smart filters: %d\n", list_sizeof(adv_filters.filters));
     return 0;
+invalid_args:
+    free(filter_str_buf);
+    free(filt_element);
+    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
+    smartfilters_destroy(&adv_filters.filters);
+    return 1;
 }
 
 static void register_cansmartfilter(void) {
@@ -445,7 +498,7 @@ static void register_cansmartfilter(void) {
     cansmart_args.filters = arg_strn(NULL, NULL, "<filter1> <filter2> ...", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, in hex format. Each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
     const esp_console_cmd_t cmd = {
         .command = "cansmartfilter",
-        .help = "Setup smart mixed filters (hardware + software). Num of filters can be up to the value in config.",
+        .help = "Setup smart mixed filters (hardware + software). Num of filters can be up to the value in config. Supportd only ID filtering of extended frames, standart frames aren't supported for now.",
         .hint = NULL,
         .func = &cansmartfilter,
         .argtable = &cansmart_args,

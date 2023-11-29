@@ -32,6 +32,11 @@ typedef struct {
 } adv_filt_t;
 
 typedef struct {
+  uint32_t filt;
+  uint32_t mask;
+} smart_filt_element_t;
+
+typedef struct {
   can_state_e state;
   uint32_t msgs_to_tx;            /**< Number of messages queued for transmission or awaiting transmission completion */
   uint32_t msgs_to_rx;            /**< Number of messages in RX queue waiting to be read */
