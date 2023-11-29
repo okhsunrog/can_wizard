@@ -465,6 +465,7 @@ static int cansmartfilter(int argc, char **argv) {
         for (int i = 0; i < c_l; i++) if (!isxdigit((int) code_substr[i])) goto invalid_args;
         if (sscanf(code_substr, "%" PRIX32, &filt_element->filt) < 1) goto invalid_args;
         if (sscanf(mask_substr, "%" PRIX32, &filt_element->mask) < 1) goto invalid_args;
+        free(filter_str_buf);
         list_push(&adv_filters.filters, (void *) filt_element);
         if (i == 0) {
             hwfilt_mask = filt_element->mask;
