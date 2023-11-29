@@ -13,7 +13,11 @@
 
 bool is_error_passive = false;
 bool auto_recovery = false;
-bool advanced_filtering = false;
+adv_filt_t adv_filters = {
+    .filters = NULL,
+    .enabled = false,
+    .sw_filtering = false,
+};
 
 SemaphoreHandle_t can_mutex;
 volatile can_status_t curr_can_state = { 0 };
@@ -112,7 +116,7 @@ void can_task(void* arg) {
         sem_res = xSemaphoreTake(can_mutex, 0);
         if (sem_res == pdTRUE) {
             while ((ret = twai_receive(&rx_msg, can_task_timeout)) == ESP_OK) {
-                if (advanced_filtering) {
+                if (adv_filters.sw_filtering) {
                     if (!matches_filters(&rx_msg)) continue;
                 }
                 can_msg_to_str(&rx_msg, "recv ", data_bytes_str); 

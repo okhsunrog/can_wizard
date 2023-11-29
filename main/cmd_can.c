@@ -42,7 +42,7 @@ static struct {
 } cansend_args;
 
 static int send_can_frame(int argc, char **argv) {
-    twai_message_t msg = {.extd = 1};
+    twai_message_t msg = { 0 };
     char printf_str[70];
     int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
     if (nerrors != 0) {
@@ -56,7 +56,7 @@ static int send_can_frame(int argc, char **argv) {
     if ((id_substr == NULL) || (strtok(NULL, "#") != NULL)) goto invalid_args;
     int id_l = strlen(id_substr);
     int dt_l = data_substr == NULL ? 0 : strlen(data_substr);
-    if ((id_l > 8) || (dt_l > 16) || (id_l % 2) || (dt_l % 2)) goto invalid_args;
+    if ((id_l > 8) || (dt_l > 16) || (dt_l % 2)) goto invalid_args;
     for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
     for (int i = 0; i < dt_l; i++) if(!isxdigit((int) data_substr[i])) goto invalid_args;
     int msg_id;
@@ -72,6 +72,7 @@ static int send_can_frame(int argc, char **argv) {
     }
     msg.data_length_code = dt_l / 2;
     msg.identifier = msg_id;
+    msg.extd = (id_l > 3);
     esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
     switch(res) {
         case ESP_OK:
@@ -91,7 +92,7 @@ static int send_can_frame(int argc, char **argv) {
     free(can_msg_str_buf);
     return 0;
 invalid_args:
-    printf("Invalid arguments!\n");
+    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
     free(can_msg_str_buf);
     return 1;
 }
@@ -115,7 +116,7 @@ static const char* can_states_str[] = {
 
 static int canstats(int argc, char **argv) {
     if (curr_can_state.state == CAN_NOT_INSTALLED) {
-        printf("CAN driver is not installed!\n");
+        print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
         return 0;
     } else {
         const char *state_str = can_states_str[curr_can_state.state];
@@ -156,10 +157,10 @@ static int canup(int argc, char **argv) {
     }
     if (canup_args.filters->count) {
         f_config = my_filters;
-        print_w_clr_time("Using predefined filters.", LOG_COLOR_GREEN, true);
+        printf("Using %s filters.\n", adv_filters.enabled ? "smart" : "basic hw");
     } else {
         f_config = (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
-        print_w_clr_time("Using accept all filters.", LOG_COLOR_GREEN, true);
+        printf("Using accept all filters.\n");
     }
     esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
     int mode = 0;
@@ -360,9 +361,9 @@ static void register_canrecover(void) {
 }
 
 static struct {
-    struct arg_lit *dual;
-    struct arg_str *code;
-    struct arg_str *mask;
+    struct arg_lit *dual_arg;
+    struct arg_str *code_arg;
+    struct arg_str *mask_arg;
     struct arg_end *end;
 } canfilter_args;
 
@@ -372,20 +373,40 @@ static int canfilter(int argc, char **argv) {
         arg_print_errors(stderr, canfilter_args.end, argv[0]);
         return 1;
     }
-    if (canfilter_args.dual->count) {
+    const char* mask_s = canfilter_args.mask_arg->sval[0];
+    const char* code_s = canfilter_args.code_arg->sval[0];
+    int m_l = strlen(mask_s);
+    int c_l = strlen(code_s);
+    if (m_l != 8 || c_l != 8) goto invalid_args;
+    for (int i = 0; i < m_l; i++) if(!isxdigit((int) mask_s[i])) goto invalid_args;
+    for (int i = 0; i < c_l; i++) if(!isxdigit((int) code_s[i])) goto invalid_args;
+    uint32_t mask = 0;
+    uint32_t code = 0;
+    if (sscanf(mask_s, "%" PRIX32, &mask) < 1) goto invalid_args;
+    if (sscanf(code_s, "%" PRIX32, &code) < 1) goto invalid_args;
+    if (canfilter_args.dual_arg->count) {
         my_filters.single_filter = false;
-
+        print_w_clr_time("Setting hw filters in dual mode.", LOG_COLOR_GREEN, true);
     } else {
         my_filters.single_filter = true;
+        print_w_clr_time("Setting hw filters in single mode.", LOG_COLOR_GREEN, true);
     }
+    printf("mask: %" PRIX32 ", code: %" PRIX32 "\n", mask, code);
+    my_filters.acceptance_code = code;
+    my_filters.acceptance_mask = mask;
+    adv_filters.enabled = false;
+    adv_filters.sw_filtering = false;
     return 0;
+invalid_args:
+    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
+    return 1;
 }
 
 static void register_canfilter(void) {
 
-    canfilter_args.mask = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
-    canfilter_args.code = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
-    canfilter_args.dual = arg_lit0("d", NULL, "Use Dual Filter Mode.");
+    canfilter_args.mask_arg = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
+    canfilter_args.code_arg = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
+    canfilter_args.dual_arg = arg_lit0("d", NULL, "Use Dual Filter Mode.");
 
     const esp_console_cmd_t cmd = {
         .command = "canfilter",

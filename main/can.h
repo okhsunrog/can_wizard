@@ -6,6 +6,7 @@
 #include "sdkconfig.h"
 #include "freertos/semphr.h"
 #include <stdint.h>
+#include <list.h>
 
 typedef struct {
   char status[30];
@@ -25,6 +26,12 @@ typedef enum {
 } can_state_e;
 
 typedef struct {
+  bool enabled;
+  List* filters;
+  bool sw_filtering;
+} adv_filt_t;
+
+typedef struct {
   can_state_e state;
   uint32_t msgs_to_tx;            /**< Number of messages queued for transmission or awaiting transmission completion */
   uint32_t msgs_to_rx;            /**< Number of messages in RX queue waiting to be read */
@@ -39,10 +46,9 @@ typedef struct {
 
 extern SemaphoreHandle_t can_mutex;
 extern volatile can_status_t curr_can_state;
-extern bool timestamp_enabled;
 extern bool auto_recovery;
 extern bool is_error_passive;
-extern bool advanced_filtering;
+extern adv_filt_t adv_filters;
 
 // functions
 
