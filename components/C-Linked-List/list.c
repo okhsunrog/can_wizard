@@ -53,7 +53,7 @@ void list_insert(List** head, void* data) {
     *head = node;
 }
 
-unsigned int list_sizeof(List* head) {
+unsigned int list_sizeof(const List* head) {
     if (head == NULL) {
         return 0;
     }

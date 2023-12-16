@@ -16,7 +16,7 @@ void* list_pop(List** head);
 void list_insert(List** head, void* data);
 
 // Get the size of the list.
-unsigned int list_sizeof(List* head);
+unsigned int list_sizeof(const List* head);
 
 // Get the data of the node at the given ordinal number in the list.
 List* list_get(List* head, unsigned int index);
