@@ -1,12 +1,10 @@
 #include "cmd_utils.h"
 #include "esp_log.h"
 #include "inttypes.h"
-#include "freertos/projdefs.h"
 #include "string.h"
 #include "esp_console.h"
 #include "argtable3/argtable3.h"
 #include "xvprintf.h"
-#include <stddef.h>
 #include <stdio.h>
 #include <ctype.h>
 
@@ -22,7 +20,7 @@ static struct {
 } timestamp_args;
 
 static int timestamp(int argc, char **argv) {
-    int nerrors = arg_parse(argc, argv, (void **) &timestamp_args);
+    const int nerrors = arg_parse(argc, argv, (void **) &timestamp_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, timestamp_args.end, argv[0]);
         return 1;

@@ -45,28 +45,29 @@ static struct {
 static int send_can_frame(int argc, char **argv) {
     twai_message_t msg = { 0 };
     char printf_str[70];
-    int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
+    const int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansend_args.end, argv[0]);
         return 1;
     }
     const char *can_msg_ptr = cansend_args.message->sval[0];
-    char *can_msg_str_buf = strdup(can_msg_ptr);
-    char *id_substr = strtok(can_msg_str_buf, "#");
-    char *data_substr = strtok(NULL, "#");
+    char* can_msg_str_buf = strdup(can_msg_ptr);
+    const char* id_substr = strtok(can_msg_str_buf, "#");
+    const char *data_substr = strtok(NULL, "#");
     if ((id_substr == NULL) || (strtok(NULL, "#") != NULL)) goto invalid_args;
-    int id_l = strlen(id_substr);
-    int dt_l = data_substr == NULL ? 0 : strlen(data_substr);
+    const int id_l = strlen(id_substr);
+    const int dt_l = data_substr == NULL ? 0 : strlen(data_substr);
     if ((id_l > 8) || (dt_l > 16) || (dt_l % 2)) goto invalid_args;
     for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
     for (int i = 0; i < dt_l; i++) if(!isxdigit((int) data_substr[i])) goto invalid_args;
     int msg_id;
     if (sscanf(id_substr, "%X", &msg_id) < 1) goto invalid_args;
     for (int i = 0; i < (dt_l / 2); i++) {
-        char *byte_to_parse = malloc(3);
-        strncpy(byte_to_parse, data_substr + i * 2, 2);
+        char* byte_to_parse = malloc(3);
+        // ReSharper disable once CppDFANullDereference (if dt_l == 0 we skip this loop)
+        strncpy(byte_to_parse, i * 2 + data_substr, 2);
         int num;
-        int res = sscanf(byte_to_parse, "%X", &num);
+        const int res = sscanf(byte_to_parse, "%X", &num);
         free(byte_to_parse);
         if (res < 1) goto invalid_args;
         msg.data[i] = num;
@@ -74,7 +75,7 @@ static int send_can_frame(int argc, char **argv) {
     msg.data_length_code = dt_l / 2;
     msg.identifier = msg_id;
     msg.extd = (id_l > 3);
-    esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
+    const esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
     switch(res) {
         case ESP_OK:
             can_msg_to_str(&msg, "sent ", printf_str);
@@ -99,22 +100,16 @@ invalid_args:
 }
 
 static int canrecover(int argc, char **argv) {
-    esp_err_t res = twai_initiate_recovery();
+    const esp_err_t res = twai_initiate_recovery();
     if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, true);
     else if (curr_can_state.state == CAN_NOT_INSTALLED) print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
     else print_w_clr_time("Can't start recovery - not in bus-off state!", LOG_COLOR_RED, true);
     return 0;
 }
 
-static const char* can_states_str[] = {
-    "not installed",
-    "stopped",
-    "error active",
-    "error passive",
-    "bus off",
-    "recovering"
-};
+static const char* can_states_str[] = {"not installed", "stopped", "error active", "error passive", "bus off", "recovering"};
 
+// ReSharper disable once CppDFAConstantFunctionResult
 static int canstats(int argc, char **argv) {
     if (curr_can_state.state == CAN_NOT_INSTALLED) {
         print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
@@ -146,11 +141,10 @@ static struct {
 } canup_args;
 
 static int canup(int argc, char **argv) {
-    esp_err_t res;
     static twai_timing_config_t t_config;
     twai_general_config_t gen_cfg = default_g_config;
     twai_filter_config_t f_config;
-    int nerrors = arg_parse(argc, argv, (void **) &canup_args);
+    const int nerrors = arg_parse(argc, argv, (void **) &canup_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, canup_args.end, argv[0]);
         return 1;
@@ -164,7 +158,7 @@ static int canup(int argc, char **argv) {
         f_config = (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
         printf("Using accept all filters.\n");
     }
-    esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
+    const esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
     int mode = 0;
     if (canup_args.mode->count) {
         const char* mode_str = canup_args.mode->sval[0];
@@ -239,7 +233,7 @@ static int canup(int argc, char **argv) {
     }
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     esp_log_level_set("gpio", ESP_LOG_ERROR);
-    res = twai_driver_install(&gen_cfg, &t_config, &f_config);
+    const esp_err_t res = twai_driver_install(&gen_cfg, &t_config, &f_config);
     if (res == ESP_OK) {
         print_w_clr_time("CAN driver installed", LOG_COLOR_BLUE, true);
         if (canup_args.autorecover->count) {
@@ -264,7 +258,7 @@ free_exit:
 
 static int canstart(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
-    esp_err_t res = twai_start();
+    const esp_err_t res = twai_start();
     if (res == ESP_OK) {
         print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, true);
         is_error_passive = false;
@@ -276,7 +270,7 @@ static int canstart(int argc, char **argv) {
 static int candown(int argc, char **argv) {
     xSemaphoreTake(can_mutex, portMAX_DELAY);
     if (curr_can_state.state != CAN_BUF_OFF) {
-        esp_err_t res = twai_stop();
+        const esp_err_t res = twai_stop();
         if (res == ESP_OK) print_w_clr_time("CAN was stopped.", LOG_COLOR_GREEN, true);
         else {
             print_w_clr_time("Driver is not in running state, or is not installed.", LOG_COLOR_RED, true);
@@ -370,15 +364,15 @@ static struct {
 } canfilter_args;
 
 static int canfilter(int argc, char **argv) {
-    int nerrors = arg_parse(argc, argv, (void **) &canfilter_args);
+    const int nerrors = arg_parse(argc, argv, (void **) &canfilter_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, canfilter_args.end, argv[0]);
         return 1;
     }
     const char* mask_s = canfilter_args.mask_arg->sval[0];
     const char* code_s = canfilter_args.code_arg->sval[0];
-    int m_l = strlen(mask_s);
-    int c_l = strlen(code_s);
+    const int m_l = strlen(mask_s);
+    const int c_l = strlen(code_s);
     if (m_l != 8 || c_l != 8) goto invalid_args;
     for (int i = 0; i < m_l; i++) if(!isxdigit((int) mask_s[i])) goto invalid_args;
     for (int i = 0; i < c_l; i++) if(!isxdigit((int) code_s[i])) goto invalid_args;
@@ -439,8 +433,8 @@ void smartfilters_destroy(List** head) {
 
 static int cansmartfilter(int argc, char **argv) {
     char *filter_str_buf = NULL;
-    smart_filt_element_t *filt_element = NULL;
-    int nerrors = arg_parse(argc, argv, (void **) &cansmart_args);
+    smart_filt_element_t* filt_element = NULL;
+    const int nerrors = arg_parse(argc, argv, (void **) &cansmart_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansmart_args.end, argv[0]);
         return 1;
@@ -455,14 +449,14 @@ static int cansmartfilter(int argc, char **argv) {
         filt_element = malloc(sizeof(smart_filt_element_t));
         const char *filter_str_ptr = cansmart_args.filters->sval[i];
         filter_str_buf = strdup(filter_str_ptr);
-        char *code_substr = strtok(filter_str_buf, "#");
-        char *mask_substr = strtok(NULL, "#");
+        const char* code_substr = strtok(filter_str_buf, "#");
+        const char *mask_substr = strtok(NULL, "#");
         if (code_substr == NULL || mask_substr == NULL || strtok(NULL, "#") != NULL) goto invalid_args;
-        int m_l = strlen(mask_substr);
-        int c_l = strlen(code_substr);
+        const int m_l = strlen(mask_substr);
+        const int c_l = strlen(code_substr);
         if (m_l > 8 || c_l > 8) goto invalid_args;
-        for (int i = 0; i < m_l; i++) if (!isxdigit((int) mask_substr[i])) goto invalid_args;
-        for (int i = 0; i < c_l; i++) if (!isxdigit((int) code_substr[i])) goto invalid_args;
+        for (int j = 0; j < m_l; j++) if (!isxdigit((int) mask_substr[j])) goto invalid_args;
+        for (int j = 0; j < c_l; j++) if (!isxdigit((int) code_substr[j])) goto invalid_args;
         if (sscanf(code_substr, "%" PRIX32, &filt_element->filt) < 1) goto invalid_args;
         if (sscanf(mask_substr, "%" PRIX32, &filt_element->mask) < 1) goto invalid_args;
         free(filter_str_buf);
@@ -471,11 +465,11 @@ static int cansmartfilter(int argc, char **argv) {
             hwfilt_mask = filt_element->mask;
             hwfilt_code = filt_element->filt;
         } else {
-            uint32_t common_bits = filt_element->mask & hwfilt_mask;
-            uint32_t new_bits = filt_element->mask - common_bits;
-            uint32_t missing_bits = hwfilt_mask - common_bits;
+            const uint32_t common_bits = filt_element->mask & hwfilt_mask;
+            const uint32_t new_bits = filt_element->mask - common_bits;
+            const uint32_t missing_bits = hwfilt_mask - common_bits;
             hwfilt_mask &= filt_element->mask;
-            uint32_t bit_to_delete = (hwfilt_code ^ filt_element->filt) & hwfilt_mask;
+            const uint32_t bit_to_delete = (hwfilt_code ^ filt_element->filt) & hwfilt_mask;
             hwfilt_mask -= bit_to_delete;
             if (new_bits || missing_bits || bit_to_delete) tmp_sw = true;
         }

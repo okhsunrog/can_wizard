@@ -5,7 +5,6 @@
 #include "freertos/projdefs.h"
 #include "hal/twai_types.h"
 #include "sdkconfig.h"
-#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include "freertos/ringbuf.h"
@@ -23,9 +22,9 @@ SemaphoreHandle_t can_mutex;
 volatile can_status_t curr_can_state = { 0 };
 
 static can_status_t get_can_state() {
-    can_status_t result;
-    twai_status_info_t status = { 0 };
-    esp_err_t res = twai_get_status_info(&status);
+    can_status_t result = { 0 };
+    twai_status_info_t status = {0};
+    const esp_err_t res = twai_get_status_info(&status);
     if (res != ESP_OK) {
         result.state = CAN_NOT_INSTALLED;
         return result;
@@ -57,8 +56,7 @@ static can_status_t get_can_state() {
     return result;
 }
 
-void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
-    char byte_str[3];
+void can_msg_to_str(const twai_message_t *can_msg, char *start_str, char *out_str) {
     out_str[0] = '\0';
     sprintf(out_str, "%scan frame: ID: %08X dlc: %d ", start_str, (int) can_msg->identifier, can_msg->data_length_code);
     if (can_msg->data_length_code == 0) {
@@ -66,17 +64,17 @@ void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str) {
     } else {
         strcat(out_str, "data: ");
         for (int i = 0; i < can_msg->data_length_code; i++) {
+            char byte_str[3];
             sprintf(byte_str, "%02X", can_msg->data[i]);
             strcat(out_str, byte_str);
         }
     }
 }
 
-bool matches_filters(twai_message_t *msg) {
-    List *tmp_cursor = adv_filters.filters;
+bool matches_filters(const twai_message_t *msg) {
+    const List *tmp_cursor = adv_filters.filters;
     while (tmp_cursor != NULL) {
-        smart_filt_element_t *curr_filter;
-        curr_filter = (smart_filt_element_t *) tmp_cursor->data;
+        const smart_filt_element_t* curr_filter = tmp_cursor->data;
         if ((msg->identifier & curr_filter->mask) == curr_filter->filt) {
             return true;
         }
@@ -89,10 +87,8 @@ void can_task(void* arg) {
     static const TickType_t can_task_timeout = pdMS_TO_TICKS(200);
     uint32_t alerts = 0;
     esp_err_t ret = ESP_OK;
-    BaseType_t sem_res;
     can_mutex = xSemaphoreCreateMutex();
     twai_message_t rx_msg;
-    char data_bytes_str[70];
     for (;;) { // A Task shall never return or exit.
         if (twai_read_alerts(&alerts, 0) == ESP_OK) {
             if (alerts & TWAI_ALERT_ERR_ACTIVE) {
@@ -121,9 +117,10 @@ void can_task(void* arg) {
             }
         }
         curr_can_state = get_can_state();
-        sem_res = xSemaphoreTake(can_mutex, 0);
+        const BaseType_t sem_res = xSemaphoreTake(can_mutex, 0);
         if (sem_res == pdTRUE) {
             while ((ret = twai_receive(&rx_msg, can_task_timeout)) == ESP_OK) {
+                char data_bytes_str[70];
                 if (adv_filters.sw_filtering) {
                     if (!matches_filters(&rx_msg)) continue;
                 }

@@ -8,7 +8,6 @@
 #include "esp_chip_info.h"
 #include "esp_sleep.h"
 #include "esp_flash.h"
-#include "driver/rtc_io.h"
 #include "driver/uart.h"
 #include "argtable3/argtable3.h"
 #include "freertos/FreeRTOS.h"
@@ -145,7 +144,7 @@ static void register_free(void)
 /* 'heap' command prints minumum heap size */
 static int heap_size(int argc, char **argv)
 {
-    uint32_t heap_size = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
+    const uint32_t heap_size = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
     printf("min heap size: %"PRIu32"\n", heap_size);
     return 0;
 }
@@ -215,7 +214,7 @@ static const char* s_log_level_names[] = {
 
 static int log_level(int argc, char **argv)
 {
-    int nerrors = arg_parse(argc, argv, (void **) &log_level_args);
+    const int nerrors = arg_parse(argc, argv, (void **) &log_level_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, log_level_args.end, argv[0]);
         return 1;
@@ -225,7 +224,7 @@ static int log_level(int argc, char **argv)
     const char* tag = log_level_args.tag->sval[0];
     const char* level_str = log_level_args.level->sval[0];
     esp_log_level_t level;
-    size_t level_len = strlen(level_str);
+    const size_t level_len = strlen(level_str);
     for (level = ESP_LOG_NONE; level <= ESP_LOG_VERBOSE; level++) {
         if (memcmp(level_str, s_log_level_names[level], level_len) == 0) {
             break;

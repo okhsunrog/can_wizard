@@ -3,9 +3,7 @@
 
 #include "driver/twai.h"
 #include "hal/twai_types.h"
-#include "sdkconfig.h"
 #include "freertos/semphr.h"
-#include <stdint.h>
 #include <list.h>
 
 typedef enum {
@@ -50,6 +48,6 @@ extern adv_filt_t adv_filters;
 // functions
 
 void can_task(void* arg);
-void can_msg_to_str(twai_message_t *can_msg, char *start_str, char *out_str);
+void can_msg_to_str(const twai_message_t *can_msg, char *start_str, char *out_str);
 
 #endif // MAIN_CAN_H

@@ -1,3 +1,4 @@
+// ReSharper disable CppDFAUnreachableCode
 #include "console.h"
 #include "sdkconfig.h"
 #include <fcntl.h>
@@ -8,7 +9,6 @@
 #include "esp_vfs_dev.h"
 #include <stdio.h>
 #include <string.h>
-#include "esp_system.h"
 #include "freertos/portmacro.h"
 #include "freertos/projdefs.h"
 #include "linenoise/linenoise.h"
@@ -39,7 +39,6 @@ SemaphoreHandle_t console_taken_sem;
 
 static void update_prompt() {
     char text[45];
-    int text_len;
     static char* prompt_color;
     text[0] = '\0';
     switch (curr_can_state.state) {
@@ -82,19 +81,17 @@ static void update_prompt() {
     } else {
         strcat(prompt_buf, text);
     }
-    text_len = strlen(text);
+    const int text_len = strlen(text);
     ls.prompt = prompt_buf;
     ls.plen = text_len;
 }
 
 void console_task_tx(void* arg) {
     static const TickType_t prompt_timeout = pdMS_TO_TICKS(200);
-    // static const TickType_t prompt_timeout = portMAX_DELAY;
     const int fd = fileno(stdout);
-    char *msg_to_print;
     size_t msg_to_print_size;
     while(1) {
-        msg_to_print = (char *)xRingbufferReceive(can_messages, &msg_to_print_size, prompt_timeout);
+        char* msg_to_print = xRingbufferReceive(can_messages, &msg_to_print_size, prompt_timeout);
         update_prompt();
         xSemaphoreTake(console_taken_sem, portMAX_DELAY);
         xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
@@ -117,10 +114,9 @@ void console_task_interactive(void* arg) {
     console_taken_sem = xSemaphoreCreateMutex();
     stdout_taken_sem = xSemaphoreCreateMutex();
     char *buf = calloc(1, console_config.max_cmdline_length);
-    char *line;
     /* Figure out if the terminal supports escape sequences */
     printf("Testing your console...\n");
-    int probe_status = linenoiseProbe();
+    const int probe_status = linenoiseProbe();
     // int probe_status = 1;
     if (probe_status) { /* zero indicates success */
         printf("\n"
@@ -142,7 +138,7 @@ void console_task_interactive(void* arg) {
     xTaskCreate(console_task_tx, "console tsk tx", 5000, NULL, CONFIG_CONSOLE_TX_PRIORITY, NULL);
     esp_log_set_vprintf(&vxprintf);
     while (true) {
-        line = linenoiseEditFeed(&ls);
+        char* line = linenoiseEditFeed(&ls);
         if (line == linenoiseEditMore) continue;
         xSemaphoreTake(console_taken_sem, portMAX_DELAY);
         linenoiseEditStop(&ls);
@@ -159,7 +155,7 @@ void console_task_interactive(void* arg) {
         }
 
         int ret;
-        esp_err_t err = esp_console_run(line, &ret);
+        const esp_err_t err = esp_console_run(line, &ret);
         if (err == ESP_ERR_NOT_FOUND) {
             printf("Unrecognized command\n");
         } else if (err == ESP_ERR_INVALID_ARG) {

@@ -15,8 +15,7 @@ void init_tx_ringbuf() {
 //      @important Do NOT use the ESP_LOG* macro's in this function ELSE recursive loop and stack overflow! So use printf() instead for debug messages.
 int vxprintf(const char *fmt, va_list args) {
     char msg_to_send[300];
-    size_t str_len;
-    str_len = vsnprintf(msg_to_send, 299, fmt, args);
+    const size_t str_len = vsnprintf(msg_to_send, 299, fmt, args);
     xRingbufferSend(can_messages, msg_to_send, str_len + 1, pdMS_TO_TICKS(200));
     return str_len;
 }
