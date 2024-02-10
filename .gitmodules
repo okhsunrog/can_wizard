@@ -1,0 +1,3 @@
+[submodule "components/console"]
+	path = components/console
+	url = git@github.com:okhsunrog/console_esp-idf.git
