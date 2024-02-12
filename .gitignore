@@ -2,6 +2,7 @@
 .vscode
 build
 sdkconfig.old
+sdkconfig
 dependencies.lock
 .idea/
 cmake-build-debug/
