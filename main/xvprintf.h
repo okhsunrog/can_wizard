@@ -5,7 +5,7 @@
 
 typedef int (*print_func)(const char *fmt, ...);
 
-extern RingbufHandle_t can_messages;
+extern RingbufHandle_t uart_tx_ringbuf;
 extern bool timestamp_enabled;
 
 void init_tx_ringbuf();

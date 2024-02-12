@@ -4,11 +4,11 @@
 #include "stdbool.h"
 #include "esp_log.h"
 
-RingbufHandle_t can_messages;
+RingbufHandle_t uart_tx_ringbuf;
 bool timestamp_enabled = false;
 
 void init_tx_ringbuf() {
-    can_messages = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
+    uart_tx_ringbuf = xRingbufferCreate(2200, RINGBUF_TYPE_NOSPLIT);
 }
 
 // This function will be called by the ESP log library every time ESP_LOG needs to be performed.
@@ -16,7 +16,7 @@ void init_tx_ringbuf() {
 int vxprintf(const char *fmt, va_list args) {
     char msg_to_send[300];
     const size_t str_len = vsnprintf(msg_to_send, 299, fmt, args);
-    xRingbufferSend(can_messages, msg_to_send, str_len + 1, pdMS_TO_TICKS(200));
+    xRingbufferSend(uart_tx_ringbuf, msg_to_send, str_len + 1, pdMS_TO_TICKS(200));
     return str_len;
 }
 

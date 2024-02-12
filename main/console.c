@@ -91,7 +91,7 @@ void console_task_tx(void* arg) {
     const int fd = fileno(stdout);
     size_t msg_to_print_size;
     while(1) {
-        char* msg_to_print = xRingbufferReceive(can_messages, &msg_to_print_size, prompt_timeout);
+        char* msg_to_print = xRingbufferReceive(uart_tx_ringbuf, &msg_to_print_size, prompt_timeout);
         update_prompt();
         xSemaphoreTake(console_taken_sem, portMAX_DELAY);
         xSemaphoreTake(stdout_taken_sem, portMAX_DELAY);
@@ -102,7 +102,7 @@ void console_task_tx(void* arg) {
                 write(fd, msg_to_print, msg_to_print_size);
                 flushWrite();
             }
-            vRingbufferReturnItem(can_messages, (void *) msg_to_print);
+            vRingbufferReturnItem(uart_tx_ringbuf, (void *) msg_to_print);
         }
         linenoiseShow(&ls);
         xSemaphoreGive(stdout_taken_sem);
