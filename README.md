@@ -1,6 +1,7 @@
 TODO:
-    better history
-    clear history and clear screen commands
-    code refactoring
-    updating prompt conflicts with some hints and with some arguments with cansend
-    test dumb mode
+- better history
+- clear history and clear screen commands
+- code refactoring
+- test dumb mode
+- fix prompt flickering with some commands
+- add standart ID filtering to cansmartfilter
