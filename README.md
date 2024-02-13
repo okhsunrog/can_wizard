@@ -4,4 +4,6 @@ TODO:
 - code refactoring
 - test dumb mode
 - fix prompt flickering with some commands
-- add standart ID filtering to cansmartfilter
+- add standard ID filtering to cansmartfilter
+
+Description in [Russian](https://habr.com/ru/articles/793326/).
