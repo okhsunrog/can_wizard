@@ -1,3 +1,6 @@
 [submodule "components/console"]
 	path = components/console
 	url = git@github.com:okhsunrog/console_esp-idf.git
+[submodule "components/littlefs"]
+	path = components/littlefs
+	url = https://github.com/joltwallet/esp_littlefs.git
