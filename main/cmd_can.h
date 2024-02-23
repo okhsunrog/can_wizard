@@ -13,7 +13,7 @@ static const twai_general_config_t default_g_config = {
     .rx_queue_len = 10,
     .alerts_enabled = TWAI_ALERT_ERR_ACTIVE | TWAI_ALERT_BUS_RECOVERED | TWAI_ALERT_BUS_ERROR | TWAI_ALERT_ERR_PASS | TWAI_ALERT_BUS_OFF,
     .clkout_divider = 0,
-    .intr_flags = ESP_INTR_FLAG_LEVEL1,
+    .intr_flags = ESP_INTR_FLAG_IRAM,
 };
 
 // functions
