@@ -1,5 +1,6 @@
 #include "cmd_utils.h"
 #include "esp_log.h"
+#include "esp_vfs.h"
 #include "inttypes.h"
 #include "string.h"
 #include "esp_console.h"
@@ -58,6 +59,7 @@ static void register_timestamp(void) {
 
 static int clrhistory(int argc, char **argv) {
     linenoiseHistoryFree(); 
+    unlink(HISTORY_PATH);
     linenoiseHistoryLoad(HISTORY_PATH);
     return 0;
 }
