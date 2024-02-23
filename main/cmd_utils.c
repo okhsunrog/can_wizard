@@ -7,11 +7,17 @@
 #include "xvprintf.h"
 #include <stdio.h>
 #include <ctype.h>
+#include "linenoise/linenoise.h"
+#include "fs.h"
+
+
 
 static void register_timestamp(void);
+static void regiter_clrhistory(void);
 
 void register_utils_commands(void) {
     register_timestamp();
+    regiter_clrhistory();
 }
 
 static struct {
@@ -49,3 +55,20 @@ static void register_timestamp(void) {
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
+
+static int clrhistory(int argc, char **argv) {
+    linenoiseHistoryFree(); 
+    linenoiseHistoryLoad(HISTORY_PATH);
+    return 0;
+}
+
+static void regiter_clrhistory(void) {
+    const esp_console_cmd_t cmd = {
+        .command = "clrhistory",
+        .help = "Clear command history",
+        .hint = NULL,
+        .func = &clrhistory,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+}
+
