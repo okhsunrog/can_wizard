@@ -57,22 +57,58 @@ static int send_can_frame(int argc, char **argv) {
     if ((id_substr == NULL) || (strtok(NULL, "#") != NULL)) goto invalid_args;
     const int id_l = strlen(id_substr);
     const int dt_l = data_substr == NULL ? 0 : strlen(data_substr);
-    if ((id_l > 8) || (dt_l > 16) || (dt_l % 2)) goto invalid_args;
-    for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
-    for (int i = 0; i < dt_l; i++) if(!isxdigit((int) data_substr[i])) goto invalid_args;
+
+    // Check if this is a remote frame (format: ID#rN where N is DLC 0-8)
+    bool is_remote_frame = false;
+    int remote_dlc = 0;
+    if (dt_l >= 1 && (data_substr[0] == 'r' || data_substr[0] == 'R')) {
+        is_remote_frame = true;
+        // Parse DLC after 'r'
+        if (dt_l == 2 && data_substr[1] >= '0' && data_substr[1] <= '8') {
+            remote_dlc = data_substr[1] - '0';
+        } else if (dt_l == 1) {
+            // Just 'r' with no number defaults to DLC 0
+            remote_dlc = 0;
+        } else {
+            goto invalid_args;
+        }
+    }
+
+    // Validate based on frame type
+    if (is_remote_frame) {
+        // For remote frames, only validate ID
+        if (id_l > 8) goto invalid_args;
+        for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
+    } else {
+        // For data frames, validate both ID and data
+        if ((id_l > 8) || (dt_l > 16) || (dt_l % 2)) goto invalid_args;
+        for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
+        for (int i = 0; i < dt_l; i++) if(!isxdigit((int) data_substr[i])) goto invalid_args;
+    }
+
     int msg_id;
     if (sscanf(id_substr, "%X", &msg_id) < 1) goto invalid_args;
-    for (int i = 0; i < (dt_l / 2); i++) {
-        char* byte_to_parse = malloc(3);
-        // ReSharper disable once CppDFANullDereference (if dt_l == 0 we skip this loop)
-        strncpy(byte_to_parse, i * 2 + data_substr, 2);
-        int num;
-        const int res = sscanf(byte_to_parse, "%X", &num);
-        free(byte_to_parse);
-        if (res < 1) goto invalid_args;
-        msg.data[i] = num;
+
+    if (is_remote_frame) {
+        // Set up remote frame
+        msg.rtr = 1;
+        msg.data_length_code = remote_dlc;
+    } else {
+        // Set up data frame (existing logic)
+        msg.rtr = 0;
+        for (int i = 0; i < (dt_l / 2); i++) {
+            char* byte_to_parse = malloc(3);
+            // ReSharper disable once CppDFANullDereference (if dt_l == 0 we skip this loop)
+            strncpy(byte_to_parse, i * 2 + data_substr, 2);
+            int num;
+            const int res = sscanf(byte_to_parse, "%X", &num);
+            free(byte_to_parse);
+            if (res < 1) goto invalid_args;
+            msg.data[i] = num;
+        }
+        msg.data_length_code = dt_l / 2;
     }
-    msg.data_length_code = dt_l / 2;
+
     msg.identifier = msg_id;
     msg.extd = (id_l > 3);
     const esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
@@ -286,13 +322,13 @@ static int candown(int argc, char **argv) {
 }
 
 static void register_cansend(void) {
-    
-    cansend_args.message = arg_str1(NULL, NULL, "ID#data", "Message to send, ID and data bytes, all in hex. # is the delimiter.");
+
+    cansend_args.message = arg_str1(NULL, NULL, "ID#data", "Message to send, ID and data bytes, all in hex. # is the delimiter. Use 'r' followed by DLC (0-8) for remote frames.");
     cansend_args.end = arg_end(2);
 
     const esp_console_cmd_t cmd = {
         .command = "cansend",
-        .help = "Send a can message to the bus, example: cansend 00008C03#02",
+        .help = "Send a CAN message to the bus. Data frame: cansend 00008C03#02 | Remote frame: cansend 00008C03#r4",
         .hint = NULL,
         .func = &send_can_frame,
         .argtable = &cansend_args,

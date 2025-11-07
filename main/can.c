@@ -58,15 +58,21 @@ static can_status_t get_can_state() {
 
 void can_msg_to_str(const twai_message_t *can_msg, char *start_str, char *out_str) {
     out_str[0] = '\0';
-    sprintf(out_str, "%scan frame: ID: %08X dlc: %d ", start_str, (int) can_msg->identifier, can_msg->data_length_code);
-    if (can_msg->data_length_code == 0) {
-        strcat(out_str, "(no data)");
+    if (can_msg->rtr) {
+        // Remote frame
+        sprintf(out_str, "%sremote frame: ID: %08X dlc: %d", start_str, (int) can_msg->identifier, can_msg->data_length_code);
     } else {
-        strcat(out_str, "data: ");
-        for (int i = 0; i < can_msg->data_length_code; i++) {
-            char byte_str[3];
-            sprintf(byte_str, "%02X", can_msg->data[i]);
-            strcat(out_str, byte_str);
+        // Data frame
+        sprintf(out_str, "%scan frame: ID: %08X dlc: %d ", start_str, (int) can_msg->identifier, can_msg->data_length_code);
+        if (can_msg->data_length_code == 0) {
+            strcat(out_str, "(no data)");
+        } else {
+            strcat(out_str, "data: ");
+            for (int i = 0; i < can_msg->data_length_code; i++) {
+                char byte_str[3];
+                sprintf(byte_str, "%02X", can_msg->data[i]);
+                strcat(out_str, byte_str);
+            }
         }
     }
 }
