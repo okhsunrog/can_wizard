@@ -22,7 +22,7 @@
 #include "fs.h"
 #include "xvprintf.h"
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
     #include <driver/usb_serial_jtag_vfs.h>
     #include "driver/usb_serial_jtag.h"
 #else
@@ -190,7 +190,7 @@ void initialize_console(void) {
     /* Disable buffering on stdin */
     setvbuf(stdin, NULL, _IONBF, 0);
 
-#if CONFIG_IDF_TARGET_ESP32C3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S3
     /* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
     usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
 
