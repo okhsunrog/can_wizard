@@ -12,7 +12,7 @@ Here are more information:
 - **CAN Communication**: Implements CAN communication protocols, enabling data exchange between devices over a CAN bus.
 - **File System Integration**: Includes file system operations for handling configuration or logging.
 - **Custom serial Console**: A custom serial console implementation for interacting with the system and issuing commands.
-- **Modular Design**: Organized in components for easier maintenance and scalability, including linked lists and command utilities.
+- **Modular Design**: Organized in components for easier maintenance and scalability.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ Here are more information:
   - SN65HVD230 CAN transceiver
 
 - **Software**:
-  - ESP-IDF (version x.x.x or newer)
+  - ESP-IDF 6.0 or newer (last tested with v6.0.2; note that the project uses the legacy `driver/twai.h` API, which is deprecated in 6.x but still functional)
   - CMake (for project build system)
   - Python (for ESP-IDF and related tools)
 
@@ -71,34 +71,18 @@ The project includes basic file system operations to read and write configuratio
 ## Project Structure
 
 ```
-can_wizard-main/
+can_wizard/
 ├── components/
-│   └── C-Linked-List/          # Linked list implementation used in the project
+│   ├── console/                # Fork of the ESP-IDF console component (linenoise with async output support)
+│   └── littlefs/               # esp_littlefs (upstream submodule)
 ├── main/
-│   ├── can.c                   # CAN communication implementation
-│   ├── console.c               # Custom console implementation
-│   ├── cmd_can.c               # CAN command handlers
-│   ├── fs.c                    # File system operations
-│   └── main.c                  # Main entry point
-└── CMakeLists.txt              # Project build system configuration
+│   ├── can.c                   # CAN receive task, state tracking, filters
+│   ├── cmd_can.c               # CAN console commands (canup, cansend, filters, ...)
+│   ├── cmd_system.c            # System commands (free, heap, tasks, restart, log_level)
+│   ├── cmd_utils.c             # Utility commands (timestamp, clrhistory)
+│   ├── console.c               # Console setup, interactive task and async output task
+│   ├── fs.c                    # LittleFS mount (command history storage)
+│   └── xvprintf.c              # Ring-buffered printing used by the async output task
+├── partitions.csv
+└── sdkconfig.defaults
 ```
-
-## TODO:
-- code refactoring
-- test dumb mode
-- fix prompt flickering with some commands
-- add standard ID filtering to cansmartfilter
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions are welcome! Please submit a pull request or open an issue to discuss your ideas.
-
-## Author
-
-Danila Gornushko
-
-

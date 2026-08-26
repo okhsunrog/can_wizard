@@ -1,16 +1,9 @@
-set(COMPONENT_SRCS
-        "main.c"
-        "cmd_system.c"
-        "can.c"
-        "console.c"
-        "fs.c"
-        "xvprintf.c"
-        "cmd_can.c"
-        "cmd_utils.c"
-)
-
-set(COMPONENT_ADD_INCLUDEDIRS
-        "."
-)
-
-register_component()
+idf_component_register(SRCS "main.c"
+                            "can.c"
+                            "cmd_can.c"
+                            "cmd_system.c"
+                            "cmd_utils.c"
+                            "console.c"
+                            "fs.c"
+                            "xvprintf.c"
+                       INCLUDE_DIRS ".")

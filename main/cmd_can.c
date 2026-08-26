@@ -1,41 +1,69 @@
 #include "cmd_can.h"
-#include "can.h"
+#include <ctype.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
+#include "argtable3/argtable3.h"
+#include "esp_console.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "hal/twai_types.h"
-#include "inttypes.h"
-#include "list.h"
+#include "can.h"
 #include "sdkconfig.h"
-#include "freertos/projdefs.h"
-#include "string.h"
-#include "esp_console.h"
-#include "argtable3/argtable3.h"
 #include "xvprintf.h"
-#include <stddef.h>
-#include <stdio.h>
-#include <ctype.h>
 
-twai_filter_config_t my_filters = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+#define CAN_STD_ID_MAX 0x7FFU
+#define CAN_EXT_ID_MAX 0x1FFFFFFFU
 
-static void register_cansend(void);
-static void register_canup(void);
-static void register_candown(void);
-static void register_canstats(void);
-static void register_canstart(void);
-static void register_canrecover(void);
-static void register_canfilter(void);
-static void register_cansmartfilter(void);
+static const twai_general_config_t default_g_config = {
+    .mode = TWAI_MODE_NORMAL,
+    .tx_io = CONFIG_CAN_TX_GPIO,
+    .rx_io = CONFIG_CAN_RX_GPIO,
+    .clkout_io = TWAI_IO_UNUSED,
+    .bus_off_io = TWAI_IO_UNUSED,
+    .tx_queue_len = 10,
+    .rx_queue_len = 32,
+    .alerts_enabled = TWAI_ALERT_ERR_ACTIVE | TWAI_ALERT_BUS_RECOVERED | TWAI_ALERT_BUS_ERROR |
+                      TWAI_ALERT_ERR_PASS | TWAI_ALERT_BUS_OFF,
+    .clkout_divider = 0,
+    .intr_flags = ESP_INTR_FLAG_IRAM,
+};
 
-void register_can_commands(void) {
-    register_cansend();
-    register_canup();
-    register_candown();
-    register_canstats();
-    register_canstart();
-    register_canrecover();
-    register_canfilter();
-    register_cansmartfilter();
+// Hardware acceptance filter applied by `canup -f`; written by canfilter and cansmartfilter.
+static twai_filter_config_t hw_filter = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+/* ------------------------------------------------------------------------- helpers */
+
+static int invalid_args(void) {
+    print_w_clr_time("Invalid arguments!", CLR_RED, true);
+    return 1;
 }
+
+// Parses 1..8 hex digits (no prefix) from s[0..len). Returns false on empty/too long/non-hex.
+static bool parse_hex_u32(const char *s, size_t len, uint32_t *out) {
+    if (len == 0 || len > 8) return false;
+    uint32_t v = 0;
+    for (size_t i = 0; i < len; i++) {
+        const unsigned char c = (unsigned char) s[i];
+        if (!isxdigit(c)) return false;
+        v = (v << 4) | (uint32_t) (isdigit(c) ? c - '0' : tolower(c) - 'a' + 10);
+    }
+    *out = v;
+    return true;
+}
+
+// Splits "left#right" without modifying the string. Returns false unless there is exactly
+// one '#' with something on both sides.
+static bool split_hash(const char *s, const char **left, size_t *left_len, const char **right, size_t *right_len) {
+    const char *hash = strchr(s, '#');
+    if (hash == NULL || hash == s || strchr(hash + 1, '#') != NULL) return false;
+    *left = s;
+    *left_len = (size_t) (hash - s);
+    *right = hash + 1;
+    *right_len = strlen(hash + 1);
+    return *right_len > 0;
+}
+
+/* ------------------------------------------------------------------------- cansend */
 
 static struct {
     struct arg_str *message;
@@ -43,130 +71,118 @@ static struct {
 } cansend_args;
 
 static int send_can_frame(int argc, char **argv) {
-    twai_message_t msg = { 0 };
-    char printf_str[70];
     const int nerrors = arg_parse(argc, argv, (void **) &cansend_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansend_args.end, argv[0]);
         return 1;
     }
-    const char *can_msg_ptr = cansend_args.message->sval[0];
-    char* can_msg_str_buf = strdup(can_msg_ptr);
-    const char* id_substr = strtok(can_msg_str_buf, "#");
-    const char *data_substr = strtok(NULL, "#");
-    if ((id_substr == NULL) || (strtok(NULL, "#") != NULL)) goto invalid_args;
-    const int id_l = strlen(id_substr);
-    const int dt_l = data_substr == NULL ? 0 : strlen(data_substr);
+    // Format: ID#DATA, ID#r or ID#rN. Everything hex. 3 ID digits = standard frame,
+    // 4..8 digits = extended frame (same convention as SocketCAN's cansend).
+    const char *arg = cansend_args.message->sval[0];
+    const char *hash = strchr(arg, '#');
+    if (hash == NULL || strchr(hash + 1, '#') != NULL) return invalid_args();
+    const size_t id_len = (size_t) (hash - arg);
+    const char *data = hash + 1;
+    const size_t data_len = strlen(data);
 
-    // Check if this is a remote frame (format: ID#rN where N is DLC 0-8)
-    bool is_remote_frame = false;
-    int remote_dlc = 0;
-    if (dt_l >= 1 && (data_substr[0] == 'r' || data_substr[0] == 'R')) {
-        is_remote_frame = true;
-        // Parse DLC after 'r'
-        if (dt_l == 2 && data_substr[1] >= '0' && data_substr[1] <= '8') {
-            remote_dlc = data_substr[1] - '0';
-        } else if (dt_l == 1) {
-            // Just 'r' with no number defaults to DLC 0
-            remote_dlc = 0;
-        } else {
-            goto invalid_args;
-        }
-    }
+    twai_message_t msg = { 0 };
+    uint32_t id;
+    if (!parse_hex_u32(arg, id_len, &id)) return invalid_args();
+    msg.extd = id_len > 3;
+    if (id > (msg.extd ? CAN_EXT_ID_MAX : CAN_STD_ID_MAX)) return invalid_args();
+    msg.identifier = id;
 
-    // Validate based on frame type
-    if (is_remote_frame) {
-        // For remote frames, only validate ID
-        if (id_l > 8) goto invalid_args;
-        for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
-    } else {
-        // For data frames, validate both ID and data
-        if ((id_l > 8) || (dt_l > 16) || (dt_l % 2)) goto invalid_args;
-        for (int i = 0; i < id_l; i++) if(!isxdigit((int) id_substr[i])) goto invalid_args;
-        for (int i = 0; i < dt_l; i++) if(!isxdigit((int) data_substr[i])) goto invalid_args;
-    }
-
-    int msg_id;
-    if (sscanf(id_substr, "%X", &msg_id) < 1) goto invalid_args;
-
-    if (is_remote_frame) {
-        // Set up remote frame
+    if (data_len >= 1 && (data[0] == 'r' || data[0] == 'R')) {
         msg.rtr = 1;
-        msg.data_length_code = remote_dlc;
-    } else {
-        // Set up data frame (existing logic)
-        msg.rtr = 0;
-        for (int i = 0; i < (dt_l / 2); i++) {
-            char* byte_to_parse = malloc(3);
-            // ReSharper disable once CppDFANullDereference (if dt_l == 0 we skip this loop)
-            strncpy(byte_to_parse, i * 2 + data_substr, 2);
-            int num;
-            const int res = sscanf(byte_to_parse, "%X", &num);
-            free(byte_to_parse);
-            if (res < 1) goto invalid_args;
-            msg.data[i] = num;
+        if (data_len == 1) {
+            msg.data_length_code = 0;
+        } else if (data_len == 2 && data[1] >= '0' && data[1] <= '8') {
+            msg.data_length_code = (uint8_t) (data[1] - '0');
+        } else {
+            return invalid_args();
         }
-        msg.data_length_code = dt_l / 2;
+    } else {
+        if (data_len > 2 * TWAI_FRAME_MAX_DLC || data_len % 2 != 0) return invalid_args();
+        for (size_t i = 0; i < data_len / 2; i++) {
+            uint32_t byte;
+            if (!parse_hex_u32(data + 2 * i, 2, &byte)) return invalid_args();
+            msg.data[i] = (uint8_t) byte;
+        }
+        msg.data_length_code = (uint8_t) (data_len / 2);
     }
 
-    msg.identifier = msg_id;
-    msg.extd = (id_l > 3);
     const esp_err_t res = twai_transmit(&msg, pdMS_TO_TICKS(1000));
-    switch(res) {
-        case ESP_OK:
-            can_msg_to_str(&msg, "sent ", printf_str);
-            print_w_clr_time(printf_str, NULL, true);
-            break;
+    switch (res) {
+        case ESP_OK: {
+            char line[80];
+            can_msg_to_str(&msg, "sent ", line, sizeof(line));
+            print_w_clr_time(line, NULL, true);
+            return 0;
+        }
         case ESP_ERR_TIMEOUT:
-            print_w_clr_time("Timeout!", LOG_COLOR_RED, true);
+            print_w_clr_time("Timeout!", CLR_RED, true);
             break;
         case ESP_ERR_NOT_SUPPORTED:
-            print_w_clr_time("Can't sent in Listen-Only mode!", LOG_COLOR_RED, true);
+            print_w_clr_time("Can't send in Listen-Only mode!", CLR_RED, true);
+            break;
+        case ESP_ERR_INVALID_STATE:
+            print_w_clr_time("CAN driver is not running!", CLR_RED, true);
             break;
         default:
-            print_w_clr_time("Invalid state!", LOG_COLOR_RED, true);
+            print_w_clr_time_f(CLR_RED, true, "Transmit failed: %s", esp_err_to_name(res));
             break;
     }
-    free(can_msg_str_buf);
-    return 0;
-invalid_args:
-    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
-    free(can_msg_str_buf);
     return 1;
 }
 
-static int canrecover(int argc, char **argv) {
-    const esp_err_t res = twai_initiate_recovery();
-    if (res == ESP_OK) print_w_clr_time("Started CAN recovery.", LOG_COLOR_GREEN, true);
-    else if (curr_can_state.state == CAN_NOT_INSTALLED) print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
-    else print_w_clr_time("Can't start recovery - not in bus-off state!", LOG_COLOR_RED, true);
-    return 0;
+static void register_cansend(void) {
+    cansend_args.message = arg_str1(NULL, NULL, "ID#data",
+        "Message to send, ID and data bytes, all in hex. # is the delimiter. Use 'r' followed by DLC (0-8) for remote frames.");
+    cansend_args.end = arg_end(2);
+    const esp_console_cmd_t cmd = {
+        .command = "cansend",
+        .help = "Send a CAN message to the bus. Data frame: cansend 00008C03#02 | Remote frame: cansend 00008C03#r4",
+        .hint = NULL,
+        .func = &send_can_frame,
+        .argtable = &cansend_args,
+    };
+    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
 
-static const char* can_states_str[] = {"not installed", "stopped", "error active", "error passive", "bus off", "recovering"};
+/* ------------------------------------------------------------------------- canup */
 
-// ReSharper disable once CppDFAConstantFunctionResult
-static int canstats(int argc, char **argv) {
-    if (curr_can_state.state == CAN_NOT_INSTALLED) {
-        print_w_clr_time("CAN driver is not installed!", LOG_COLOR_RED, true);
-        return 0;
-    } else {
-        const char *state_str = can_states_str[curr_can_state.state];
-        printf("status: %s\n", state_str);
-        printf("TX Err Counter: %" PRIu32 "\n", curr_can_state.tx_error_counter);
-        printf("RX Err Counter: %" PRIu32 "\n", curr_can_state.rx_error_counter);
-        printf("Failed transmit: %" PRIu32 "\n", curr_can_state.tx_failed_count);
-        printf("Arbitration lost times: %" PRIu32 "\n", curr_can_state.arb_lost_count);
-        printf("Bus-off count: %" PRIu32 "\n", curr_can_state.bus_error_count);
-    }
-    return 0;
-}
-
-static const char* can_modes[] = {
-    "normal",
-    "no_ack",
-    "listen_only",
+static const struct {
+    const char *name;
+    twai_mode_t mode;
+    const char *description;
+} can_modes[] = {
+    { "normal", TWAI_MODE_NORMAL, "Normal" },
+    { "no_ack", TWAI_MODE_NO_ACK, "No Ack" },
+    { "listen_only", TWAI_MODE_LISTEN_ONLY, "Listen Only" },
 };
+
+static bool timing_for_speed(int bps, twai_timing_config_t *t) {
+    switch (bps) {
+// The very low bit rates need a large prescaler that not every chip has.
+#ifdef TWAI_TIMING_CONFIG_1KBITS
+        case 1000:    *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_1KBITS(); return true;
+        case 5000:    *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_5KBITS(); return true;
+        case 10000:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_10KBITS(); return true;
+        case 12500:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_12_5KBITS(); return true;
+        case 16000:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_16KBITS(); return true;
+        case 20000:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_20KBITS(); return true;
+#endif
+        case 25000:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_25KBITS(); return true;
+        case 50000:   *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_50KBITS(); return true;
+        case 100000:  *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_100KBITS(); return true;
+        case 125000:  *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_125KBITS(); return true;
+        case 250000:  *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_250KBITS(); return true;
+        case 500000:  *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_500KBITS(); return true;
+        case 800000:  *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_800KBITS(); return true;
+        case 1000000: *t = (twai_timing_config_t) TWAI_TIMING_CONFIG_1MBITS(); return true;
+        default:      return false;
+    }
+}
 
 static struct {
     struct arg_int *speed;
@@ -177,176 +193,89 @@ static struct {
 } canup_args;
 
 static int canup(int argc, char **argv) {
-    static twai_timing_config_t t_config;
-    twai_general_config_t gen_cfg = default_g_config;
-    twai_filter_config_t f_config;
     const int nerrors = arg_parse(argc, argv, (void **) &canup_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, canup_args.end, argv[0]);
         return 1;
     }
-    if (canup_args.filters->count) {
-        f_config = my_filters;
-        printf("Using %s filters.\n", adv_filters.enabled ? "smart" : "basic hw");
+
+    twai_timing_config_t t_config;
+    if (!timing_for_speed(canup_args.speed->ival[0], &t_config)) {
+        print_w_clr_time("Unsupported speed!", CLR_RED, true);
+        return 1;
+    }
+
+    size_t mode = 0;
+    if (canup_args.mode->count) {
+        const char *mode_str = canup_args.mode->sval[0];
+        for (mode = 0; mode < sizeof(can_modes) / sizeof(can_modes[0]); mode++) {
+            if (strcmp(mode_str, can_modes[mode].name) == 0) break;
+        }
+        if (mode == sizeof(can_modes) / sizeof(can_modes[0])) {
+            print_w_clr_time("Unsupported mode!", CLR_RED, true);
+            return 1;
+        }
+    }
+    twai_general_config_t g_config = default_g_config;
+    g_config.mode = can_modes[mode].mode;
+
+    const bool use_filters = canup_args.filters->count > 0;
+    twai_filter_config_t f_config = use_filters ? hw_filter : (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
+    if (use_filters) {
+        printf("Using %s filters.\n", adv_filters.configured ? "smart" : "basic hw");
     } else {
-        adv_filters.enabled = false;
-        adv_filters.sw_filtering = false;
-        f_config = (twai_filter_config_t) TWAI_FILTER_CONFIG_ACCEPT_ALL();
         printf("Using accept all filters.\n");
     }
+    print_w_clr_time_f(CLR_BLUE, true, "Starting CAN in %s Mode...", can_modes[mode].description);
+
+    int ret = 0;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    // The driver logs a warning about the strapping pins on some boards; not interesting here.
     const esp_log_level_t prev_gpio_lvl = esp_log_level_get("gpio");
-    int mode = 0;
-    if (canup_args.mode->count) {
-        const char* mode_str = canup_args.mode->sval[0];
-        while (mode < 4) {
-            if (mode == 3) {
-                print_w_clr_time("Unsupported mode!", LOG_COLOR_RED, true);
-                return 1;
-            }
-            if (memcmp(mode_str, can_modes[mode], strlen(mode_str)) == 0) break;
-            mode++;
-        }
-    }
-    switch(mode) {
-        case 1:
-            gen_cfg.mode = TWAI_MODE_NO_ACK;
-            print_w_clr_time("Starting CAN in No Ack Mode...", LOG_COLOR_BLUE, true);
-            break;
-        case 2:
-            gen_cfg.mode = TWAI_MODE_LISTEN_ONLY;
-            print_w_clr_time("Starting CAN in Listen Only Mode...", LOG_COLOR_BLUE, true);
-            break;
-        default: //0
-            print_w_clr_time("Starting CAN in Normal Mode...", LOG_COLOR_BLUE, true);
-            break;
-    }
-    switch (canup_args.speed->ival[0]) {
-        #if CONFIG_IDF_TARGET_ESP32C3
-        case 1000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_1KBITS();
-            break;
-        case 5000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_5KBITS();
-            break;
-        case 10000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_10KBITS();
-            break;
-        case 12500:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_12_5KBITS();
-            break;
-        case 16000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_16KBITS();
-            break;
-        case 20000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_20KBITS();
-            break;
-        #endif
-        case 25000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_25KBITS();
-            break;
-        case 50000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_50KBITS();
-            break;
-        case 100000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_100KBITS();
-            break;
-        case 125000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_125KBITS();
-            break;
-        case 250000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_250KBITS();
-            break;
-        case 500000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_500KBITS();
-            break;
-        case 800000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_800KBITS();
-            break;
-        case 1000000:
-            t_config = (twai_timing_config_t) TWAI_TIMING_CONFIG_1MBITS();
-            break;
-        default:
-            print_w_clr_time("Unsupported speed!", LOG_COLOR_RED, true);
-            return 1;
-    }
-    xSemaphoreTake(can_mutex, portMAX_DELAY);
     esp_log_level_set("gpio", ESP_LOG_ERROR);
-    const esp_err_t res = twai_driver_install(&gen_cfg, &t_config, &f_config);
-    if (res == ESP_OK) {
-        print_w_clr_time("CAN driver installed", LOG_COLOR_BLUE, true);
-        if (canup_args.autorecover->count) {
-            print_w_clr_time("Auto recovery is enabled!", LOG_COLOR_PURPLE, true);
-            auto_recovery = true;
-        } else auto_recovery = false;
-    } else if (res == ESP_ERR_INVALID_STATE) {
-        print_w_clr_time("Driver is already installed!", LOG_COLOR_BROWN, true);
-        goto free_exit;
-    } else {
-        print_w_clr_time("Couldn't install CAN driver! Rebooting...", LOG_COLOR_RED, true);
-        esp_restart();
-    }
-    ESP_ERROR_CHECK(twai_start());
-    is_error_passive = false;
-    print_w_clr_time("CAN driver started", LOG_COLOR_BLUE, true);
-free_exit:
-    xSemaphoreGive(can_mutex);
+    esp_err_t res = twai_driver_install(&g_config, &t_config, &f_config);
     esp_log_level_set("gpio", prev_gpio_lvl);
-    return 0;
-}
 
-static int canstart(int argc, char **argv) {
-    xSemaphoreTake(can_mutex, portMAX_DELAY);
-    const esp_err_t res = twai_start();
-    if (res == ESP_OK) {
-        print_w_clr_time("CAN driver started", LOG_COLOR_GREEN, true);
-        is_error_passive = false;
-    } else print_w_clr_time("Driver is not in stopped state, or is not installed.", LOG_COLOR_RED, true);
-    xSemaphoreGive(can_mutex);
-    return 0;
-}
-
-static int candown(int argc, char **argv) {
-    xSemaphoreTake(can_mutex, portMAX_DELAY);
-    if (curr_can_state.state != CAN_BUF_OFF) {
-        const esp_err_t res = twai_stop();
-        if (res == ESP_OK) print_w_clr_time("CAN was stopped.", LOG_COLOR_GREEN, true);
-        else {
-            print_w_clr_time("Driver is not in running state, or is not installed.", LOG_COLOR_RED, true);
-            xSemaphoreGive(can_mutex);
-            return 1;
+    if (res == ESP_ERR_INVALID_STATE) {
+        print_w_clr_time("Driver is already installed! Use candown first.", CLR_YELLOW, true);
+        ret = 1;
+    } else if (res != ESP_OK) {
+        print_w_clr_time_f(CLR_RED, true, "Couldn't install CAN driver: %s", esp_err_to_name(res));
+        ret = 1;
+    } else {
+        print_w_clr_time("CAN driver installed", CLR_BLUE, true);
+        auto_recovery = canup_args.autorecover->count > 0;
+        if (auto_recovery) print_w_clr_time("Auto recovery is enabled!", CLR_PURPLE, true);
+        adv_filters.sw_filtering = use_filters && adv_filters.configured && adv_filters.needs_sw;
+        if (adv_filters.sw_filtering) print_w_clr_time("Software filtering is active.", CLR_PURPLE, true);
+        res = twai_start();
+        if (res == ESP_OK) {
+            is_error_passive = false;
+            print_w_clr_time("CAN driver started", CLR_BLUE, true);
+        } else {
+            print_w_clr_time_f(CLR_RED, true, "Couldn't start CAN driver: %s", esp_err_to_name(res));
+            ret = 1;
         }
     }
-    ESP_ERROR_CHECK(twai_driver_uninstall());
     xSemaphoreGive(can_mutex);
-    return 0;
-}
-
-static void register_cansend(void) {
-
-    cansend_args.message = arg_str1(NULL, NULL, "ID#data", "Message to send, ID and data bytes, all in hex. # is the delimiter. Use 'r' followed by DLC (0-8) for remote frames.");
-    cansend_args.end = arg_end(2);
-
-    const esp_console_cmd_t cmd = {
-        .command = "cansend",
-        .help = "Send a CAN message to the bus. Data frame: cansend 00008C03#02 | Remote frame: cansend 00008C03#r4",
-        .hint = NULL,
-        .func = &send_can_frame,
-        .argtable = &cansend_args,
-    };
-    ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
+    return ret;
 }
 
 static void register_canup(void) {
-
     canup_args.speed = arg_int1(NULL, NULL, "<speed>", "CAN bus speed, in bps. See help for supported speeds.");
-    canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only>", "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
-    canup_args.filters = arg_lit0("f", NULL, "Use predefined CAN filters.");
-    canup_args.autorecover = arg_lit0("r", "auto-recovery", "Set to enable auto-recovery of CAN bus if case of bus-off event");
+    canup_args.mode = arg_str0("m", "mode", "<normal|no_ack|listen_only>",
+        "Set CAN mode. Normal (default), No Ack (for self-testing) or Listen Only (to prevent transmitting, for monitoring).");
+    canup_args.filters = arg_lit0("f", NULL, "Use the filters configured with canfilter / cansmartfilter.");
+    canup_args.autorecover = arg_lit0("r", "auto-recovery", "Automatically recover the bus after a bus-off event.");
     canup_args.end = arg_end(4);
-
     const esp_console_cmd_t cmd = {
         .command = "canup",
-        .help = "Install can drivers and start can interface. Used right after board start or during runtime for changing CAN configuration. Supported speeds: 1mbits, 800kbits, 500kbits, 250kbits, 125kbits, 100kbits, 50kbits, 25kbits, 20kbits, 16kbits, 12.5kbits, 10kbits, 5kbits, 1kbits.",
+        .help = "Install the CAN driver and start the interface. Use it right after boot, or after candown to change the configuration. "
+                "Supported speeds: 1mbits, 800kbits, 500kbits, 250kbits, 125kbits, 100kbits, 50kbits, 25kbits"
+#ifdef TWAI_TIMING_CONFIG_1KBITS
+                ", 20kbits, 16kbits, 12.5kbits, 10kbits, 5kbits, 1kbits"
+#endif
+                ".",
         .hint = NULL,
         .func = &canup,
         .argtable = &canup_args,
@@ -354,45 +283,104 @@ static void register_canup(void) {
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
 
-static void register_candown(void) {
+/* ------------------------------------------------------------------------- canstart / candown / canrecover */
+
+static int canstart(int argc, char **argv) {
+    int ret = 0;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    const esp_err_t res = twai_start();
+    if (res == ESP_OK) {
+        is_error_passive = false;
+        print_w_clr_time("CAN driver started", CLR_GREEN, true);
+    } else {
+        print_w_clr_time("Driver is not in stopped state, or is not installed.", CLR_RED, true);
+        ret = 1;
+    }
+    xSemaphoreGive(can_mutex);
+    return ret;
+}
+
+static int candown(int argc, char **argv) {
+    int ret = 1;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    twai_status_info_t status;
+    if (twai_get_status_info(&status) != ESP_OK) {
+        print_w_clr_time("CAN driver is not installed!", CLR_RED, true);
+        goto exit;
+    }
+    if (status.state == TWAI_STATE_RUNNING) {
+        const esp_err_t res = twai_stop();
+        if (res != ESP_OK) {
+            print_w_clr_time_f(CLR_RED, true, "Couldn't stop CAN: %s", esp_err_to_name(res));
+            goto exit;
+        }
+        print_w_clr_time("CAN was stopped.", CLR_GREEN, true);
+    }
+    // Uninstall is allowed from STOPPED and BUS_OFF, but not while recovering.
+    const esp_err_t res = twai_driver_uninstall();
+    if (res != ESP_OK) {
+        print_w_clr_time_f(CLR_RED, true, "Couldn't uninstall CAN driver: %s", esp_err_to_name(res));
+        goto exit;
+    }
+    adv_filters.sw_filtering = false;
+    print_w_clr_time("CAN driver uninstalled.", CLR_GREEN, true);
+    ret = 0;
+exit:
+    xSemaphoreGive(can_mutex);
+    return ret;
+}
+
+static int canrecover(int argc, char **argv) {
+    int ret = 0;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    const esp_err_t res = twai_initiate_recovery();
+    if (res == ESP_OK) {
+        print_w_clr_time("Started CAN recovery.", CLR_GREEN, true);
+    } else if (can_read_status().state == CAN_NOT_INSTALLED) {
+        print_w_clr_time("CAN driver is not installed!", CLR_RED, true);
+        ret = 1;
+    } else {
+        print_w_clr_time("Can't start recovery - not in bus-off state!", CLR_RED, true);
+        ret = 1;
+    }
+    xSemaphoreGive(can_mutex);
+    return ret;
+}
+
+static void register_simple(const char *command, const char *help, esp_console_cmd_func_t func) {
     const esp_console_cmd_t cmd = {
-        .command = "candown",
-        .help = "Stop CAN interface and uninstall CAN driver, for example, to install and start with different parameters/filters.",
+        .command = command,
+        .help = help,
         .hint = NULL,
-        .func = &candown,
+        .func = func,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
 
-static void register_canstats(void) {
-    const esp_console_cmd_t cmd = {
-        .command = "canstats",
-        .help = "Print CAN statistics.",
-        .hint = NULL,
-        .func = &canstats,
-    };
-    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+/* ------------------------------------------------------------------------- canstats */
+
+static int canstats(int argc, char **argv) {
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    const can_status_t st = can_read_status();
+    xSemaphoreGive(can_mutex);
+    if (st.state == CAN_NOT_INSTALLED) {
+        print_w_clr_time("CAN driver is not installed!", CLR_RED, true);
+        return 1;
+    }
+    printf("status: %s\n", can_state_str(st.state));
+    printf("TX Err Counter: %" PRIu32 "\n", st.tx_error_counter);
+    printf("RX Err Counter: %" PRIu32 "\n", st.rx_error_counter);
+    printf("Failed transmit: %" PRIu32 "\n", st.tx_failed_count);
+    printf("Arbitration lost times: %" PRIu32 "\n", st.arb_lost_count);
+    printf("Bus error count: %" PRIu32 "\n", st.bus_error_count);
+    printf("RX missed (queue full): %" PRIu32 "\n", st.rx_missed_count);
+    printf("RX overrun (FIFO): %" PRIu32 "\n", st.rx_overrun_count);
+    printf("Queued TX / RX: %" PRIu32 " / %" PRIu32 "\n", st.msgs_to_tx, st.msgs_to_rx);
+    printf("Software filtering: %s\n", adv_filters.sw_filtering ? "on" : "off");
+    return 0;
 }
 
-static void register_canstart(void) {
-    const esp_console_cmd_t cmd = {
-        .command = "canstart",
-        .help = "Start CAN interface, used after bus recovery, otherwise see canup command.",
-        .hint = NULL,
-        .func = &canstart,
-    };
-    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
-}
-
-static void register_canrecover(void) {
-    const esp_console_cmd_t cmd = {
-        .command = "canrecover",
-        .help = "Recover CAN after buf-off. Used when auto-recovery is turned off.",
-        .hint = NULL,
-        .func = &canrecover,
-    };
-    ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
-}
+/* ------------------------------------------------------------------------- canfilter */
 
 static struct {
     struct arg_lit *dual_arg;
@@ -407,46 +395,33 @@ static int canfilter(int argc, char **argv) {
         arg_print_errors(stderr, canfilter_args.end, argv[0]);
         return 1;
     }
-    const char* mask_s = canfilter_args.mask_arg->sval[0];
-    const char* code_s = canfilter_args.code_arg->sval[0];
-    const int m_l = strlen(mask_s);
-    const int c_l = strlen(code_s);
-    if (m_l != 8 || c_l != 8) goto invalid_args;
-    for (int i = 0; i < m_l; i++) if(!isxdigit((int) mask_s[i])) goto invalid_args;
-    for (int i = 0; i < c_l; i++) if(!isxdigit((int) code_s[i])) goto invalid_args;
-    uint32_t mask = 0;
-    uint32_t code = 0;
-    if (sscanf(mask_s, "%" PRIX32, &mask) < 1) goto invalid_args;
-    if (sscanf(code_s, "%" PRIX32, &code) < 1) goto invalid_args;
-    if (canfilter_args.dual_arg->count) {
-        my_filters.single_filter = false;
-        print_w_clr_time("Setting hw filters in dual mode.", LOG_COLOR_GREEN, true);
-    } else {
-        my_filters.single_filter = true;
-        print_w_clr_time("Setting hw filters in single mode.", LOG_COLOR_GREEN, true);
+    const char *mask_s = canfilter_args.mask_arg->sval[0];
+    const char *code_s = canfilter_args.code_arg->sval[0];
+    uint32_t mask, code;
+    if (!parse_hex_u32(mask_s, strlen(mask_s), &mask) || !parse_hex_u32(code_s, strlen(code_s), &code)) {
+        return invalid_args();
     }
-    printf("mask: %" PRIX32 ", code: %" PRIX32 "\n", mask, code);
-    my_filters.acceptance_code = code;
-    my_filters.acceptance_mask = mask;
-    adv_filters.enabled = false;
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    hw_filter.single_filter = canfilter_args.dual_arg->count == 0;
+    hw_filter.acceptance_code = code;
+    hw_filter.acceptance_mask = mask;
+    adv_filters.configured = false;
     adv_filters.sw_filtering = false;
+    xSemaphoreGive(can_mutex);
+    print_w_clr_time_f(CLR_GREEN, true, "Hardware filter set in %s mode.", hw_filter.single_filter ? "single" : "dual");
+    printf("mask: %08" PRIX32 ", code: %08" PRIX32 "\n", mask, code);
+    printf("Apply it with: canup <speed> -f\n");
     return 0;
-invalid_args:
-    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
-    return 1;
 }
 
 static void register_canfilter(void) {
-
-    canfilter_args.mask_arg = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
-    canfilter_args.code_arg = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex form, 8 symbols.");
+    canfilter_args.mask_arg = arg_str1("m", "mask", "<mask>", "Acceptance mask (as in esp-idf docs), uint32_t in hex, up to 8 digits.");
+    canfilter_args.code_arg = arg_str1("c", "code", "<code>", "Acceptance code (as in esp-idf docs), uint32_t in hex, up to 8 digits.");
     canfilter_args.dual_arg = arg_lit0("d", NULL, "Use Dual Filter Mode.");
     canfilter_args.end = arg_end(4);
-
-
     const esp_console_cmd_t cmd = {
         .command = "canfilter",
-        .help = "Manually setup basic hardware filtering.",
+        .help = "Manually set up basic hardware filtering. Takes effect on the next `canup -f`.",
         .hint = NULL,
         .func = &canfilter,
         .argtable = &canfilter_args,
@@ -454,92 +429,94 @@ static void register_canfilter(void) {
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
 }
 
+/* ------------------------------------------------------------------------- cansmartfilter */
+
 static struct {
     struct arg_str *filters;
     struct arg_end *end;
 } cansmart_args;
 
-
-void smartfilters_destroy(List** head) {
-    while (*head != NULL) {
-        List* tmp_cursor = *head;
-        *head = (*head)->next;
-        free((smart_filt_element_t *) tmp_cursor->data);
-        free(tmp_cursor);
-    }
-}
-
 static int cansmartfilter(int argc, char **argv) {
-    char *filter_str_buf = NULL;
-    smart_filt_element_t* filt_element = NULL;
     const int nerrors = arg_parse(argc, argv, (void **) &cansmart_args);
     if (nerrors != 0) {
         arg_print_errors(stderr, cansmart_args.end, argv[0]);
         return 1;
     }
-    smartfilters_destroy(&adv_filters.filters);
-    adv_filters.sw_filtering = false;
-    adv_filters.enabled = false;
-    bool tmp_sw = false;
-    uint32_t hwfilt_code = 0;
-    uint32_t hwfilt_mask = 0;
-    for (int i = 0; i < cansmart_args.filters->count; i++) {
-        filt_element = malloc(sizeof(smart_filt_element_t));
-        const char *filter_str_ptr = cansmart_args.filters->sval[i];
-        filter_str_buf = strdup(filter_str_ptr);
-        const char* code_substr = strtok(filter_str_buf, "#");
-        const char *mask_substr = strtok(NULL, "#");
-        if (code_substr == NULL || mask_substr == NULL || strtok(NULL, "#") != NULL) goto invalid_args;
-        const int m_l = strlen(mask_substr);
-        const int c_l = strlen(code_substr);
-        if (m_l > 8 || c_l > 8) goto invalid_args;
-        for (int j = 0; j < m_l; j++) if (!isxdigit((int) mask_substr[j])) goto invalid_args;
-        for (int j = 0; j < c_l; j++) if (!isxdigit((int) code_substr[j])) goto invalid_args;
-        if (sscanf(code_substr, "%" PRIX32, &filt_element->filt) < 1) goto invalid_args;
-        if (sscanf(mask_substr, "%" PRIX32, &filt_element->mask) < 1) goto invalid_args;
-        free(filter_str_buf);
-        list_push(&adv_filters.filters, (void *) filt_element);
-        if (i == 0) {
-            hwfilt_mask = filt_element->mask;
-            hwfilt_code = filt_element->filt;
-        } else {
-            const uint32_t common_bits = filt_element->mask & hwfilt_mask;
-            const uint32_t new_bits = filt_element->mask - common_bits;
-            const uint32_t missing_bits = hwfilt_mask - common_bits;
-            hwfilt_mask &= filt_element->mask;
-            const uint32_t bit_to_delete = (hwfilt_code ^ filt_element->filt) & hwfilt_mask;
-            hwfilt_mask -= bit_to_delete;
-            if (new_bits || missing_bits || bit_to_delete) tmp_sw = true;
+    // Parse everything into a local copy first so that a bad argument leaves the current
+    // configuration untouched.
+    smart_filt_element_t items[CONFIG_CAN_MAX_SMARTFILTERS_NUM];
+    const size_t count = (size_t) cansmart_args.filters->count;
+    if (count == 0 || count > CONFIG_CAN_MAX_SMARTFILTERS_NUM) return invalid_args();
+    for (size_t i = 0; i < count; i++) {
+        const char *code_s, *mask_s;
+        size_t code_len, mask_len;
+        if (!split_hash(cansmart_args.filters->sval[i], &code_s, &code_len, &mask_s, &mask_len) ||
+            !parse_hex_u32(code_s, code_len, &items[i].code) ||
+            !parse_hex_u32(mask_s, mask_len, &items[i].mask)) {
+            return invalid_args();
         }
-        filt_element = NULL;
     }
-    my_filters.single_filter = true;
-    my_filters.acceptance_mask = ~(hwfilt_mask << 3);
-    my_filters.acceptance_code = hwfilt_code << 3;
-    adv_filters.sw_filtering = tmp_sw;
-    adv_filters.enabled = true;
-    print_w_clr_time("Smart filters were set.", LOG_COLOR_GREEN, true);
-    printf("Num of smart filters: %d\n", list_sizeof(adv_filters.filters));
+
+    // Derive the widest hardware filter that passes every entry: keep only the mask bits every
+    // entry cares about *and* agrees on. If that is wider than any single entry, the frames it
+    // lets through must also be matched in software.
+    uint32_t hw_mask = items[0].mask;
+    uint32_t hw_code = items[0].code & items[0].mask;
+    bool needs_sw = false;
+    for (size_t i = 1; i < count; i++) {
+        const uint32_t mask = items[i].mask;
+        const uint32_t code = items[i].code & mask;
+        const uint32_t common = hw_mask & mask;
+        const uint32_t differing = (hw_code ^ code) & common;
+        const uint32_t new_mask = common & ~differing;
+        if (new_mask != hw_mask || new_mask != mask) needs_sw = true;
+        hw_mask = new_mask;
+        hw_code &= hw_mask;
+    }
+
+    xSemaphoreTake(can_mutex, portMAX_DELAY);
+    memcpy(adv_filters.items, items, count * sizeof(items[0]));
+    adv_filters.count = count;
+    adv_filters.configured = true;
+    adv_filters.needs_sw = needs_sw;
+    adv_filters.sw_filtering = false;  // activated by canup -f
+    // Extended-frame layout of the acceptance registers: the 29-bit ID sits in bits 31..3.
+    hw_filter.single_filter = true;
+    hw_filter.acceptance_code = hw_code << 3;
+    hw_filter.acceptance_mask = ~(hw_mask << 3);
+    xSemaphoreGive(can_mutex);
+
+    print_w_clr_time("Smart filters were set.", CLR_GREEN, true);
+    printf("Number of filters: %zu, hardware mask: %08" PRIX32 ", code: %08" PRIX32 ", software filtering %s.\n",
+           count, hw_mask, hw_code, needs_sw ? "needed" : "not needed");
+    printf("Apply them with: canup <speed> -f\n");
     return 0;
-invalid_args:
-    free(filter_str_buf);
-    free(filt_element);
-    print_w_clr_time("Invalid arguments!", LOG_COLOR_RED, true);
-    smartfilters_destroy(&adv_filters.filters);
-    return 1;
 }
 
 static void register_cansmartfilter(void) {
-
-    cansmart_args.filters = arg_strn(NULL, NULL, "<code#mask>", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM, "Filters, each one contains mask and code in format code#mask. Both mask and code are uint32_t numbers in hex format. Example: 0000FF00#0000FFFF");
+    cansmart_args.filters = arg_strn(NULL, NULL, "<code#mask>", 1, CONFIG_CAN_MAX_SMARTFILTERS_NUM,
+        "Filters in the form code#mask, both uint32_t in hex (up to 8 digits). A frame passes if (ID & mask) == (code & mask). Example: 0000FF00#0000FFFF");
     cansmart_args.end = arg_end(2);
-
     const esp_console_cmd_t cmd = {
         .command = "cansmartfilter",
-        .help = "Setup smart mixed filters (hardware + software). Num of filters can be up to the value in config. Supportd only ID filtering of extended frames, standart frames aren't supported for now.",
+        .help = "Set up smart mixed filters (hardware + software). Only extended-frame IDs are supported; "
+                "standard frames are not filtered correctly. Takes effect on the next `canup -f`.",
         .hint = NULL,
         .func = &cansmartfilter,
         .argtable = &cansmart_args,
     };
     ESP_ERROR_CHECK(esp_console_cmd_register(&cmd));
+}
+
+/* ------------------------------------------------------------------------- registration */
+
+void register_can_commands(void) {
+    register_cansend();
+    register_canup();
+    register_simple("candown", "Stop the CAN interface and uninstall the driver, e.g. to canup with different parameters/filters.", &candown);
+    register_simple("canstats", "Print CAN statistics.", &canstats);
+    register_simple("canstart", "Start the CAN interface, used after bus recovery; otherwise see canup.", &canstart);
+    register_simple("canrecover", "Recover CAN after bus-off. Used when auto-recovery is off.", &canrecover);
+    register_canfilter();
+    register_cansmartfilter();
 }

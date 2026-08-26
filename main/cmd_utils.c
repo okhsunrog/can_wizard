@@ -1,24 +1,19 @@
 #include "cmd_utils.h"
-#include "esp_log.h"
-#include "esp_vfs.h"
-#include "inttypes.h"
-#include "string.h"
-#include "esp_console.h"
-#include "argtable3/argtable3.h"
-#include "xvprintf.h"
 #include <stdio.h>
-#include <ctype.h>
+#include <unistd.h>
+#include "argtable3/argtable3.h"
+#include "esp_console.h"
+#include "esp_err.h"
 #include "linenoise/linenoise.h"
 #include "fs.h"
-
-
+#include "xvprintf.h"
 
 static void register_timestamp(void);
-static void regiter_clrhistory(void);
+static void register_clrhistory(void);
 
 void register_utils_commands(void) {
     register_timestamp();
-    regiter_clrhistory();
+    register_clrhistory();
 }
 
 static struct {
@@ -33,10 +28,10 @@ static int timestamp(int argc, char **argv) {
         return 1;
     }
     if (timestamp_args.disable->count) {
-        print_w_clr_time("Disabled timestamps!", LOG_COLOR_PURPLE, true);
+        print_w_clr_time("Disabled timestamps!", CLR_PURPLE, true);
         timestamp_enabled = false;
     } else {
-        print_w_clr_time("Enabled timestamps!", LOG_COLOR_PURPLE, true);
+        print_w_clr_time("Enabled timestamps!", CLR_PURPLE, true);
         timestamp_enabled = true;
     }
     return 0;
@@ -58,13 +53,12 @@ static void register_timestamp(void) {
 }
 
 static int clrhistory(int argc, char **argv) {
-    linenoiseHistoryFree(); 
+    linenoiseHistoryFree();
     unlink(HISTORY_PATH);
-    linenoiseHistoryLoad(HISTORY_PATH);
     return 0;
 }
 
-static void regiter_clrhistory(void) {
+static void register_clrhistory(void) {
     const esp_console_cmd_t cmd = {
         .command = "clrhistory",
         .help = "Clear command history",

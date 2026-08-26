@@ -8,7 +8,7 @@
 #include "esp_chip_info.h"
 #include "esp_sleep.h"
 #include "esp_flash.h"
-#include "driver/uart.h"
+#include "esp_system.h"
 #include "argtable3/argtable3.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -107,7 +107,8 @@ static void register_version(void)
 
 static int restart(int argc, char **argv)
 {
-    ESP_LOGI(TAG, "Restarting");
+    printf("Restarting...\n");
+    fflush(stdout);
     esp_restart();
 }
 
@@ -141,7 +142,7 @@ static void register_free(void)
     ESP_ERROR_CHECK( esp_console_cmd_register(&cmd) );
 }
 
-/* 'heap' command prints minumum heap size */
+/* 'heap' command prints minimum heap size */
 static int heap_size(int argc, char **argv)
 {
     const uint32_t heap_size = heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT);
@@ -224,9 +225,8 @@ static int log_level(int argc, char **argv)
     const char* tag = log_level_args.tag->sval[0];
     const char* level_str = log_level_args.level->sval[0];
     esp_log_level_t level;
-    const size_t level_len = strlen(level_str);
     for (level = ESP_LOG_NONE; level <= ESP_LOG_VERBOSE; level++) {
-        if (memcmp(level_str, s_log_level_names[level], level_len) == 0) {
+        if (strcmp(level_str, s_log_level_names[level]) == 0) {
             break;
         }
     }
@@ -247,7 +247,7 @@ static int log_level(int argc, char **argv)
 static void register_log_level(void)
 {
     log_level_args.tag = arg_str1(NULL, NULL, "<tag|*>", "Log tag to set the level for, or * to set for all tags");
-    log_level_args.level = arg_str1(NULL, NULL, "<none|error|warn|debug|verbose>", "Log level to set. Abbreviated words are accepted.");
+    log_level_args.level = arg_str1(NULL, NULL, "<none|error|warn|info|debug|verbose>", "Log level to set.");
     log_level_args.end = arg_end(2);
 
     const esp_console_cmd_t cmd = {
