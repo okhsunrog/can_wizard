@@ -4,8 +4,8 @@
 CAN Wizard is a project designed for communication using the CAN (Controller Area Network) protocol, primarily targeted at embedded systems utilizing the ESP32 microcontroller family. This project is developed using ESP-IDF and supports ESP32-C3, allowing flexible development for different use cases.
 
 Here are more information: 
-- [Xa6p Article](https://habr.com/ru/articles/793326/). (in Russian)
-- [Traduccion in English](https://okhsunrog.ru/articles/2024/02/15/can_bus_sniffer/).
+- [Хабр Article](https://habr.com/ru/articles/793326/). (in Russian)
+- [Same article in English](https://okhsunrog.ru/articles/2024/02/15/can_bus_sniffer/).
 
 ## Features
 
